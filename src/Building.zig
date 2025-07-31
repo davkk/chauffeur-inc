@@ -1,6 +1,6 @@
-const c = @cImport({ @cInclude("raylib.h"); });
+const rl = @import("raylib.zig").rl;
 
-rect: c.Rectangle,
+rect: rl.Rectangle,
 
 const Self = @This();
 
@@ -16,5 +16,5 @@ pub fn init(x: f32, y: f32, width: f32, height: f32) Self {
 }
 
 pub fn draw(self: *const Self) void {
-    c.DrawRectangleRec(self.rect, c.GRAY);
+    rl.DrawRectangleRec(self.rect, rl.GRAY);
 }

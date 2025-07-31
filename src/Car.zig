@@ -1,11 +1,9 @@
-const c = @cImport({
-    @cInclude("raylib.h");
-});
+const rl = @import("raylib.zig").rl;
 const math = @import("std").math;
 const globals = @import("globals.zig");
 const Building = @import("Building.zig");
 
-rect: c.Rectangle,
+rect: rl.Rectangle,
 
 vel: f32,
 acc: f32,
@@ -31,27 +29,14 @@ pub fn init() Self {
     };
 }
 
-pub fn update(self: *Self, time: f32, buildings: []const Building) void {
-    // FIXME: do proper collision detection with angles
-    var is_colliding = false;
-    for (buildings) |building| {
-        if (c.CheckCollisionRecs(self.rect, building.rect)) {
-            is_colliding = true;
-            break;
-        }
-    }
-
-    if (is_colliding) {
-        return;
-    }
-
-    if (c.IsKeyDown(c.KEY_W)) {
+pub fn update(self: *Self, time: f32) void {
+    if (rl.IsKeyDown(rl.KEY_W)) {
         if (self.vel >= 0) {
             self.vel = @min(self.vel + self.acc * time, globals.MAX_VEL);
         } else if (self.vel < 0) {
             self.vel = @min(self.vel + self.decel * time, 0);
         }
-    } else if (c.IsKeyDown(c.KEY_S)) {
+    } else if (rl.IsKeyDown(rl.KEY_S)) {
         if (self.vel <= 0) {
             self.vel = @max(self.vel - self.acc * time, -globals.MAX_VEL);
         } else if (self.vel > 0) {
@@ -65,9 +50,9 @@ pub fn update(self: *Self, time: f32, buildings: []const Building) void {
         }
     }
 
-    if (c.IsKeyDown(c.KEY_A)) {
+    if (rl.IsKeyDown(rl.KEY_A)) {
         self.steer_angle = @max(self.steer_angle - globals.STEER_SENSITIVITY * time, -globals.MAX_STEER_ANGLE);
-    } else if (c.IsKeyDown(c.KEY_D)) {
+    } else if (rl.IsKeyDown(rl.KEY_D)) {
         self.steer_angle = @min(self.steer_angle + globals.STEER_SENSITIVITY * time, globals.MAX_STEER_ANGLE);
     } else {
         if (self.steer_angle > 0) {
@@ -85,10 +70,10 @@ pub fn update(self: *Self, time: f32, buildings: []const Building) void {
 }
 
 pub fn draw(self: *const Self) void {
-    c.DrawRectanglePro(
+    rl.DrawRectanglePro(
         self.rect,
         .{ .x = self.rect.width / 2, .y = self.rect.height / 2 },
         self.angle * 180 / math.pi,
-        c.YELLOW,
+        rl.YELLOW,
     );
 }
