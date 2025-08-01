@@ -22,8 +22,8 @@ pub fn init() Self {
             .height = 64,
         },
         .vel = 0,
-        .acc = 100,
-        .decel = 200,
+        .acc = 200,
+        .decel = 400,
         .angle = 0.0,
         .steer_angle = 0.0,
     };
@@ -62,16 +62,19 @@ pub fn update(self: *Self, time: f32) void {
         }
     }
 
-    if (self.vel != 0) {
-        self.angle = @mod((self.angle + self.steer_angle * time * (self.vel / globals.MAX_VEL)), 2 * math.pi);
-        self.rect.x += math.sin(self.angle) * self.vel * time;
-        self.rect.y -= math.cos(self.angle) * self.vel * time;
-    }
+    self.angle = @mod((self.angle + self.steer_angle * time * (self.vel / globals.MAX_VEL)), 2 * math.pi);
+    self.rect.x += math.sin(self.angle) * self.vel * time;
+    self.rect.y -= math.cos(self.angle) * self.vel * time;
 }
 
 pub fn draw(self: *const Self) void {
     rl.DrawRectanglePro(
-        self.rect,
+        .{
+            .x = self.rect.x + self.rect.width / 2,
+            .y = self.rect.y + self.rect.height / 2,
+            .width = self.rect.width,
+            .height = self.rect.height,
+        },
         .{ .x = self.rect.width / 2, .y = self.rect.height / 2 },
         self.angle * 180 / math.pi,
         rl.YELLOW,

@@ -8,4 +8,4 @@ pub const FRICTION = 120;
 pub const MAX_VEL = 300;
 
 pub const MAX_STEER_ANGLE = 3.0 * math.pi / 4.0;
-pub const STEER_SENSITIVITY = 8;
+pub const STEER_SENSITIVITY = 10;

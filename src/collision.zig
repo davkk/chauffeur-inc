@@ -15,16 +15,37 @@ fn rotate(v: rl.Vector2, cv: rl.Vector2, angle: f32) rl.Vector2 {
 }
 
 pub fn get_vertices(rect: *const rl.Rectangle, angle: f32) [4]rl.Vector2 {
-    const rect_center = rl.Vector2{ .x = rect.x + rect.width / 2, .y = rect.y + rect.height / 2 };
+    const top_left = rl.Vector2{
+        .x = rect.x,
+        .y = rect.y,
+    };
+    const top_right = rl.Vector2{
+        .x = rect.x + rect.width,
+        .y = rect.y,
+    };
+    const bottom_left = rl.Vector2{
+        .x = rect.x,
+        .y = rect.y + rect.height,
+    };
+    const bottom_right = rl.Vector2{
+        .x = rect.x + rect.width,
+        .y = rect.y + rect.height,
+    };
+
+    const rect_center = rl.Vector2{
+        .x = rect.x + rect.width / 2,
+        .y = rect.y + rect.height / 2,
+    };
+
     return [_]rl.Vector2{
-        rotate(.{ .x = rect.x, .y = rect.y }, rect_center, angle),
-        rotate(.{ .x = rect.x + rect.width, .y = rect.y }, rect_center, angle),
-        rotate(.{ .x = rect.x, .y = rect.y + rect.height }, rect_center, angle),
-        rotate(.{ .x = rect.x + rect.width, .y = rect.y + rect.height }, rect_center, angle),
+        rotate(top_left, rect_center, angle),
+        rotate(top_right, rect_center, angle),
+        rotate(bottom_left, rect_center, angle),
+        rotate(bottom_right, rect_center, angle),
     };
 }
 
-fn get_rect_axes(angle: f32) [2]rl.Vector2 {
+pub fn get_rect_axes(angle: f32) [2]rl.Vector2 {
     const cos = math.cos(angle);
     const sin = math.sin(angle);
     return [_]rl.Vector2{
@@ -59,7 +80,7 @@ pub fn collide(rect1: *const rl.Rectangle, angle1: f32, rect2: *const rl.Rectang
         const min1, const max1 = project(rect1, angle1, &axis);
         const min2, const max2 = project(rect2, angle2, &axis);
 
-        if (max1 < min2 - 1e-5 or max2 < min1 - 1e-5) {
+        if (max1 < min2 or max2 < min1) {
             return false;
         }
     }
@@ -69,7 +90,7 @@ pub fn collide(rect1: *const rl.Rectangle, angle1: f32, rect2: *const rl.Rectang
         const min1, const max1 = project(rect1, angle1, &axis);
         const min2, const max2 = project(rect2, angle2, &axis);
 
-        if (max1 < min2 - 1e-2 or max2 < min1 - 1e-2) {
+        if (max1 < min2 or max2 < min1) {
             return false;
         }
     }

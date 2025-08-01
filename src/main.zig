@@ -26,7 +26,6 @@ pub fn main() !void {
         .init(globals.SCREEN_WIDTH - 50, 0, 50, globals.SCREEN_HEIGHT),
         .init(0, 0, globals.SCREEN_WIDTH, 50),
         .init(0, globals.SCREEN_HEIGHT - 50, globals.SCREEN_WIDTH, 50),
-
         .init(200, 150, 80, 120),
         .init(globals.SCREEN_WIDTH - 280, 150, 80, 120),
         .init(200, globals.SCREEN_HEIGHT - 270, 80, 120),
@@ -38,8 +37,7 @@ pub fn main() !void {
 
         if (game_state == GameState.Playing) {
             car.update(time);
-
-            for (&buildings) |building| {
+            for (buildings) |building| {
                 if (collision.collide(&car.rect, car.angle, &building.rect, 0)) {
                     game_state = .GameOver;
                     break;
@@ -58,7 +56,9 @@ pub fn main() !void {
         rl.ClearBackground(rl.BLACK);
 
         car.draw();
-        // In your main drawing loop, after car.draw()
+        for (&buildings) |building| {
+            building.draw();
+        }
 
         const car_vertices = collision.get_vertices(&car.rect, car.angle);
         for (car_vertices, 0..) |vertex, i| {
@@ -69,15 +69,21 @@ pub fn main() !void {
                 3 => rl.YELLOW,
                 else => rl.WHITE,
             };
-            rl.DrawCircleV(vertex, 5, color);
+            rl.DrawCircleV(vertex, 6, color);
         }
 
         for (buildings) |building| {
-            rl.DrawRectangleLinesEx(building.rect, 2, rl.BLUE);
-        }
-
-        for (&buildings) |building| {
-            building.draw();
+            const building_verices = collision.get_vertices(&building.rect, 0);
+            for (building_verices, 0..) |vertex, i| {
+                const color = switch (i) {
+                    0 => rl.RED,
+                    1 => rl.GREEN,
+                    2 => rl.BLUE,
+                    3 => rl.YELLOW,
+                    else => rl.WHITE,
+                };
+                rl.DrawCircleV(vertex, 6, color);
+            }
         }
 
         if (game_state == GameState.GameOver) {
