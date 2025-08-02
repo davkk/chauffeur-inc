@@ -1,32 +1,49 @@
+const std = @import("std");
 const rl = @import("raylib.zig").rl;
+const vec_add = @import("raylib.zig").vec_add;
 const math = @import("std").math;
 const g = @import("globals.zig");
 const Building = @import("Building.zig");
 
+const Self = @This();
+
+throttle: f32,
+breaking: bool,
+
 rect: rl.Rectangle,
 vel: rl.Vector2,
+angular_vel: f32,
+
+mass: f32,
+inertia: f32,
 
 accel: f32,
 decel: f32,
 angle: f32,
 steer_angle: f32,
 
-const Self = @This();
-
 pub fn init() Self {
+    const width = 32;
+    const height = 64;
+    const mass = 1;
+    const accel = 200;
     return .{
+        .mass = mass,
+        .inertia = mass * (width * width + height * height) / 12,
+        .accel = accel,
+        .decel = 2 * accel,
+
+        .throttle = 0,
+        .breaking = false,
+
         .rect = .{
-            .x = g.SCREEN_WIDTH / 2.0 - 16,
-            .y = g.SCREEN_HEIGHT / 2.0 - 32,
-            .width = 32,
-            .height = 64,
+            .x = g.SCREEN_WIDTH / 2.0 - width / 2,
+            .y = g.SCREEN_HEIGHT - 3 * height,
+            .width = width,
+            .height = height,
         },
-        .vel = .{
-            .x = 0,
-            .y = 0,
-        },
-        .accel = 200,
-        .decel = 400,
+        .vel = .{ .x = 0, .y = 0 },
+        .angular_vel = 0,
         .angle = 0.0,
         .steer_angle = 0.0,
     };
@@ -34,54 +51,70 @@ pub fn init() Self {
 
 pub fn update(self: *Self, time: f32) void {
     const forward = rl.Vector2{
-        .x = @sin(self.angle),
-        .y = -@cos(self.angle), // -y is up
+        .x = math.sin(self.angle),
+        .y = -math.cos(self.angle),
     };
-    const right = rl.Vector2{
-        .x = forward.y,
-        .y = -forward.x,
-    };
-
-    const vel_x = rl.Vector2DotProduct(self.vel, right);
-    const vel_y = rl.Vector2DotProduct(self.vel, forward);
-
-    const speed_x = vel_x * 0.4 * time;
-
-    var speed_y = vel_y;
-    if (rl.IsKeyDown(rl.KEY_W)) {
-        speed_y += self.accel * time;
-    } else if (rl.IsKeyDown(rl.KEY_S)) {
-        speed_y -= self.accel * time;
-    } else {
-        if (speed_y > 0) {
-            speed_y = @max(speed_y - g.FRICTION * time, 0);
-        } else if (speed_y < 0) {
-            speed_y = @min(speed_y + g.FRICTION * time, 0);
-        }
-    }
-    speed_y = @min(@max(speed_y, -g.MAX_SPEED), g.MAX_SPEED);
-
-    self.vel = rl.Vector2Add(
-        rl.Vector2Scale(forward, speed_y),
-        rl.Vector2Scale(right, speed_x),
-    );
+    const vel_y = rl.Vector2DotProduct(forward, self.vel);
 
     if (rl.IsKeyDown(rl.KEY_A)) {
-        self.steer_angle = @max(self.steer_angle - g.STEER_SENSITIVITY * time, -g.MAX_STEER_ANGLE);
+        self.steer_angle = @max(self.steer_angle - g.STEER_SPEED * time, -g.MAX_STEER_ANGLE);
     } else if (rl.IsKeyDown(rl.KEY_D)) {
-        self.steer_angle = @min(self.steer_angle + g.STEER_SENSITIVITY * time, g.MAX_STEER_ANGLE);
+        self.steer_angle = @min(self.steer_angle + g.STEER_SPEED * time, g.MAX_STEER_ANGLE);
     } else {
         if (self.steer_angle > 0) {
-            self.steer_angle = @max(self.steer_angle - g.STEER_SENSITIVITY * time, 0);
+            self.steer_angle = @max(self.steer_angle - g.STEER_SPEED * time, 0);
         } else if (self.steer_angle < 0) {
-            self.steer_angle = @min(self.steer_angle + g.STEER_SENSITIVITY * time, 0);
+            self.steer_angle = @min(self.steer_angle + g.STEER_SPEED * time, 0);
         }
     }
 
-    const speed = rl.Vector2Length(self.vel);
-    if (speed > 0) {
-        const dir: f32 = if (vel_y >= 0) 1.0 else -1.0;
-        self.angle = @mod((self.angle + dir * self.steer_angle * time * (speed / g.MAX_SPEED)), 2 * math.pi);
+    const R = self.rect.height / @sin(self.steer_angle);
+    const omega = rl.Vector2Length(self.vel) / R;
+
+    if (rl.IsKeyDown(rl.KEY_W)) {
+        if (vel_y >= 0) {
+            self.throttle = @min(self.throttle + g.THROTTLE_SPEED * time, g.THROTTLE_SPEED);
+            self.breaking = false;
+        } else {
+            self.throttle = 0;
+            self.breaking = true;
+        }
+        self.angle = @mod((self.angle + time * omega), math.pi * 2);
+    } else if (rl.IsKeyDown(rl.KEY_S)) {
+        if (vel_y <= 0) {
+            self.throttle = @max(self.throttle - g.THROTTLE_SPEED * time, -g.THROTTLE_SPEED);
+            self.breaking = false;
+        } else {
+            self.throttle = 0;
+            self.breaking = true;
+        }
+        self.angle = @mod((self.angle - time * omega), math.pi * 2);
+    } else {
+        if (self.throttle >= 0) {
+            self.throttle = @max(self.throttle - 2 * g.THROTTLE_SPEED * time, 0);
+        } else {
+            self.throttle = @min(self.throttle + 2 * g.THROTTLE_SPEED * time, 0);
+        }
+
+        self.breaking = false;
+    }
+
+    const F_trac = rl.Vector2Scale(forward, self.throttle);
+    const F_drag = rl.Vector2Scale(self.vel, -g.DRAG_FACTOR * rl.Vector2Length(self.vel));
+    const F_roll = rl.Vector2Scale(self.vel, -g.ROLLING_RESISTANCE);
+
+    var F_brek = rl.Vector2Zero();
+    if (self.breaking) {
+        F_brek = rl.Vector2Scale(forward, -g.BREAK_FACTOR);
+    }
+
+    const F = vec_add(&.{ F_trac, F_drag, F_roll, F_brek });
+
+    const accel = rl.Vector2Scale(F, 1 / self.mass);
+    self.vel = rl.Vector2Add(self.vel, rl.Vector2Scale(accel, time));
+
+    if (self.breaking and rl.Vector2Length(self.vel) < g.VELOCITY_THRESHOLD) {
+        self.vel = rl.Vector2Zero();
     }
 
     self.rect.x += self.vel.x * time;

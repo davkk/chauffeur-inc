@@ -8,16 +8,9 @@ const collision = @import("collision.zig");
 const Car = @import("Car.zig");
 const Building = @import("Building.zig");
 
-const GameState = enum {
-    Playing,
-    GameOver,
-};
-
 pub fn main() !void {
     rl.InitWindow(globals.SCREEN_WIDTH, globals.SCREEN_HEIGHT, "Chauffeur Inc");
     rl.SetTargetFPS(globals.TARGET_FPS);
-
-    var game_state = GameState.Playing;
 
     var car = Car.init();
 
@@ -26,35 +19,12 @@ pub fn main() !void {
         .init(globals.SCREEN_WIDTH - 50, 0, 50, globals.SCREEN_HEIGHT),
         .init(0, 0, globals.SCREEN_WIDTH, 50),
         .init(0, globals.SCREEN_HEIGHT - 50, globals.SCREEN_WIDTH, 50),
-        .init(200, 150, 80, 120),
-        .init(globals.SCREEN_WIDTH - 280, 150, 80, 120),
-        .init(200, globals.SCREEN_HEIGHT - 270, 80, 120),
-        .init(globals.SCREEN_WIDTH - 280, globals.SCREEN_HEIGHT - 270, 80, 120),
     };
 
     while (!rl.WindowShouldClose()) {
         const time = rl.GetFrameTime();
 
-        if (game_state == GameState.Playing) {
-            car.update(time);
-
-            // TODO: need a better way to check for collisions
-            for (buildings) |building| {
-                if (collision.collide(&car.rect, car.angle, &building.rect, 0)) |normal| {
-                    _ = normal;
-                    // const forward = rl.Vector2{
-                    //     .x = math.sin(car.angle),
-                    //     .y = -math.cos(car.angle),
-                    // };
-                    car.vel = rl.Vector2Scale(car.vel, -1);
-                }
-            }
-        } else if (game_state == GameState.GameOver) {
-            if (rl.IsKeyPressed(rl.KEY_R)) {
-                car = Car.init();
-                game_state = GameState.Playing;
-            }
-        }
+        car.update(time);
 
         rl.BeginDrawing();
         defer rl.EndDrawing();
@@ -92,11 +62,10 @@ pub fn main() !void {
             }
         }
 
-        rl.DrawText(rl.TextFormat("vel x: %.1f", car.vel.x), 10, 10, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("vel y: %.1f", car.vel.y), 10, 35, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("speed: %.1f", rl.Vector2Length(car.vel)), 10, 60, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("steer angle: %.2f", car.steer_angle * 180.0 / math.pi), 10, 85, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("car angle: %.2f", car.angle * 180.0 / math.pi), 10, 110, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("throttle: %.1f", car.throttle), 10, 10, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("speed: %.2f", rl.Vector2Length(car.vel)), 10, 35, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("steer: %.2f", car.steer_angle * 180 / math.pi), 10, 60, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("angle: %.2f", car.angle * 180 / math.pi), 10, 85, 20, rl.WHITE);
 
         const car_center = rl.Vector2{
             .x = car.rect.x + car.rect.width / 2,
