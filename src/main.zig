@@ -37,10 +37,16 @@ pub fn main() !void {
 
         if (game_state == GameState.Playing) {
             car.update(time);
+
+            // TODO: need a better way to check for collisions
             for (buildings) |building| {
-                if (collision.collide(&car.rect, car.angle, &building.rect, 0)) {
-                    game_state = .GameOver;
-                    break;
+                if (collision.collide(&car.rect, car.angle, &building.rect, 0)) |normal| {
+                    _ = normal;
+                    // const forward = rl.Vector2{
+                    //     .x = math.sin(car.angle),
+                    //     .y = -math.cos(car.angle),
+                    // };
+                    car.vel = -car.vel;
                 }
             }
         } else if (game_state == GameState.GameOver) {

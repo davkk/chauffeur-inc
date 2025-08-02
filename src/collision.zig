@@ -70,18 +70,32 @@ fn project(rect: *const rl.Rectangle, angle: f32, axis: *const rl.Vector2) struc
         }
     }
 
-    assert(min <= max);
     return .{ min, max };
 }
 
-pub fn collide(rect1: *const rl.Rectangle, angle1: f32, rect2: *const rl.Rectangle, angle2: f32) bool {
+pub fn collide(
+    rect1: *const rl.Rectangle,
+    angle1: f32,
+    rect2: *const rl.Rectangle,
+    angle2: f32,
+) ?rl.Vector2 {
+    var depth: f32 = math.inf(f32);
+    var normal: rl.Vector2 = undefined;
+
     const axes1 = get_rect_axes(angle1);
     for (axes1) |axis| {
         const min1, const max1 = project(rect1, angle1, &axis);
         const min2, const max2 = project(rect2, angle2, &axis);
 
         if (max1 < min2 or max2 < min1) {
-            return false;
+            return null;
+        } else {
+            const overlap1 = max1 - min2;
+            const overlap2 = max2 - min1;
+            if (overlap1 < overlap2) {
+                depth = overlap1;
+                normal = axis;
+            }
         }
     }
 
@@ -91,9 +105,16 @@ pub fn collide(rect1: *const rl.Rectangle, angle1: f32, rect2: *const rl.Rectang
         const min2, const max2 = project(rect2, angle2, &axis);
 
         if (max1 < min2 or max2 < min1) {
-            return false;
+            return null;
+        } else {
+            const overlap1 = max1 - min2;
+            const overlap2 = max2 - min1;
+            if (overlap1 < overlap2) {
+                depth = overlap1;
+                normal = axis;
+            }
         }
     }
 
-    return true;
+    return rl.Vector2Normalize(normal);
 }
