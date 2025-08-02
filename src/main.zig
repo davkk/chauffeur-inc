@@ -46,7 +46,7 @@ pub fn main() !void {
                     //     .x = math.sin(car.angle),
                     //     .y = -math.cos(car.angle),
                     // };
-                    car.vel = -car.vel;
+                    car.vel = rl.Vector2Scale(car.vel, -1);
                 }
             }
         } else if (game_state == GameState.GameOver) {
@@ -92,13 +92,17 @@ pub fn main() !void {
             }
         }
 
-        if (game_state == GameState.GameOver) {
-            rl.DrawRectangle(0, 0, globals.SCREEN_WIDTH, globals.SCREEN_HEIGHT, rl.BLACK);
-            rl.DrawText("Game Over!", 0, 0, 64, rl.RED);
-        } else {
-            rl.DrawText(rl.TextFormat("Velocity: %.1f", car.vel), 10, 10, 20, rl.WHITE);
-            rl.DrawText(rl.TextFormat("Steer Angle: %.2f", car.steer_angle * 180.0 / math.pi), 10, 35, 20, rl.WHITE);
-            rl.DrawText(rl.TextFormat("Car Angle: %.2f", car.angle * 180.0 / math.pi), 10, 60, 20, rl.WHITE);
-        }
+        rl.DrawText(rl.TextFormat("vel x: %.1f", car.vel.x), 10, 10, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("vel y: %.1f", car.vel.y), 10, 35, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("speed: %.1f", rl.Vector2Length(car.vel)), 10, 60, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("steer angle: %.2f", car.steer_angle * 180.0 / math.pi), 10, 85, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("car angle: %.2f", car.angle * 180.0 / math.pi), 10, 110, 20, rl.WHITE);
+
+        const car_center = rl.Vector2{
+            .x = car.rect.x + car.rect.width / 2,
+            .y = car.rect.y + car.rect.height / 2,
+        };
+        const vel_end = rl.Vector2Add(car_center, car.vel);
+        rl.DrawLineEx(car_center, vel_end, 2, rl.WHITE);
     }
 }
