@@ -16,5 +16,5 @@ pub fn init(x: f32, y: f32, width: f32, height: f32) Self {
 }
 
 pub fn draw(self: *const Self) void {
-    rl.DrawRectangleRec(self.rect, rl.GRAY);
+    rl.DrawRectangleRec(self.rect, rl.BLACK);
 }

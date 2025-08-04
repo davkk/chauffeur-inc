@@ -29,24 +29,24 @@ pub fn main() !void {
         rl.BeginDrawing();
         defer rl.EndDrawing();
 
-        rl.ClearBackground(rl.BLACK);
+        rl.ClearBackground(rl.GRAY);
 
         car.draw();
         for (&buildings) |building| {
             building.draw();
         }
 
-        const car_vertices = collision.get_vertices(&car.rect, car.angle);
-        for (car_vertices, 0..) |vertex, i| {
-            const color = switch (i) {
-                0 => rl.RED,
-                1 => rl.GREEN,
-                2 => rl.BLUE,
-                3 => rl.YELLOW,
-                else => rl.WHITE,
-            };
-            rl.DrawCircleV(vertex, 6, color);
-        }
+        // const car_vertices = collision.get_vertices(&car.rect(), car.angle);
+        // for (car_vertices, 0..) |vertex, i| {
+        //     const color = switch (i) {
+        //         0 => rl.RED,
+        //         1 => rl.GREEN,
+        //         2 => rl.BLUE,
+        //         3 => rl.YELLOW,
+        //         else => rl.WHITE,
+        //     };
+        //     rl.DrawCircleV(vertex, 6, color);
+        // }
 
         for (buildings) |building| {
             const building_verices = collision.get_vertices(&building.rect, 0);
@@ -63,13 +63,14 @@ pub fn main() !void {
         }
 
         rl.DrawText(rl.TextFormat("throttle: %.1f", car.throttle), 10, 10, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("speed: %.2f", rl.Vector2Length(car.vel)), 10, 35, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("steer: %.2f", car.steer_angle * 180 / math.pi), 10, 60, 20, rl.WHITE);
-        rl.DrawText(rl.TextFormat("angle: %.2f", car.angle * 180 / math.pi), 10, 85, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("brake: %.1f", car.brake), 10, 35, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("steer: %.2f", car.steer), 10, 60, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("angular_vel: %.2f", car.angular_vel), 10, 110, 20, rl.WHITE);
+        rl.DrawText(rl.TextFormat("vel: %.2f", rl.Vector2Length(car.vel)), 10, 135, 20, rl.WHITE);
 
         const car_center = rl.Vector2{
-            .x = car.rect.x + car.rect.width / 2,
-            .y = car.rect.y + car.rect.height / 2,
+            .x = car.pos.x + car.size.x / 2,
+            .y = car.pos.y + car.size.y / 2,
         };
         const vel_end = rl.Vector2Add(car_center, car.vel);
         rl.DrawLineEx(car_center, vel_end, 2, rl.WHITE);
