@@ -2,17 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const math = @import("std").math;
 const rl = @import("raylib.zig").rl;
-
-fn rotate(v: rl.Vector2, cv: rl.Vector2, angle: f32) rl.Vector2 {
-    const cos = math.cos(angle);
-    const sin = math.sin(angle);
-    const x = v.x - cv.x;
-    const y = v.y - cv.y;
-    return .{
-        .x = x * cos - y * sin + cv.x,
-        .y = x * sin + y * cos + cv.y,
-    };
-}
+const vec_rotate = @import("raylib.zig").vec_rotate;
 
 pub fn get_vertices(rect: *const rl.Rectangle, angle: f32) [4]rl.Vector2 {
     const top_left = rl.Vector2{
@@ -38,10 +28,10 @@ pub fn get_vertices(rect: *const rl.Rectangle, angle: f32) [4]rl.Vector2 {
     };
 
     return [_]rl.Vector2{
-        rotate(top_left, rect_center, angle),
-        rotate(top_right, rect_center, angle),
-        rotate(bottom_left, rect_center, angle),
-        rotate(bottom_right, rect_center, angle),
+        vec_rotate(top_left, rect_center, angle),
+        vec_rotate(top_right, rect_center, angle),
+        vec_rotate(bottom_left, rect_center, angle),
+        vec_rotate(bottom_right, rect_center, angle),
     };
 }
 

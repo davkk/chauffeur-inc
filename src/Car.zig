@@ -1,6 +1,9 @@
 const std = @import("std");
+
 const rl = @import("raylib.zig").rl;
+const vec_rotate = @import("raylib.zig").vec_rotate;
 const vec_add = @import("raylib.zig").vec_add;
+
 const math = @import("std").math;
 const g = @import("globals.zig");
 
@@ -168,43 +171,55 @@ pub fn draw(self: *const Self) void {
 
     const car_rect = self.rect();
 
+    self.draw_tire_front(-4, self.tire_front.size.y / 2);
+    self.draw_tire_rear(-4, self.size.y - self.tire_rear.size.y / 2);
+    self.draw_tire_front(self.size.x + 4, self.tire_front.size.y / 2);
+    self.draw_tire_rear(self.size.x + 4, self.size.y - self.tire_rear.size.y / 2);
+
     rl.DrawRectanglePro(
         car_rect,
         .{ .x = center_width, .y = center_height },
         self.angle * 180 / math.pi,
         rl.YELLOW,
     );
-
-    self.draw_tire_front(-4, self.tire_front.size.y / 2);
-    self.draw_tire_rear(-4, self.size.y - self.tire_rear.size.y / 2);
-    self.draw_tire_front(self.size.x + 4, self.tire_front.size.y / 2);
-    self.draw_tire_rear(self.size.x + 4, self.size.y - self.tire_rear.size.y / 2);
 }
 
 fn draw_tire_front(self: *const Self, x: f32, y: f32) void {
+    const tire_pos = vec_rotate(
+        .{ .x = self.pos.x + x, .y = self.pos.y + y },
+        .{ .x = self.pos.x + self.size.x / 2, .y = self.pos.y + self.size.y / 2 },
+        self.angle,
+    );
+
     rl.DrawRectanglePro(
         .{
-            .x = self.pos.x + x,
-            .y = self.pos.y + y,
+            .x = tire_pos.x,
+            .y = tire_pos.y,
             .width = self.tire_front.size.x,
             .height = self.tire_front.size.y,
         },
         .{ .x = self.tire_front.size.x / 2, .y = self.tire_front.size.y / 2 },
-        self.steer * g.MAX_STEER_ANGLE * 180 / math.pi,
+        (self.angle + self.steer * g.MAX_STEER_ANGLE) * 180 / math.pi,
         rl.BLACK,
     );
 }
 
 fn draw_tire_rear(self: *const Self, x: f32, y: f32) void {
+    const tire_pos = vec_rotate(
+        .{ .x = self.pos.x + x, .y = self.pos.y + y },
+        .{ .x = self.pos.x + self.size.x / 2, .y = self.pos.y + self.size.y / 2 },
+        self.angle,
+    );
+
     rl.DrawRectanglePro(
         .{
-            .x = self.pos.x + x,
-            .y = self.pos.y + y,
+            .x = tire_pos.x,
+            .y = tire_pos.y,
             .width = self.tire_rear.size.x,
             .height = self.tire_rear.size.y,
         },
         .{ .x = self.tire_rear.size.x / 2, .y = self.tire_rear.size.y / 2 },
-        0,
+        self.angle * 180 / math.pi,
         rl.BLACK,
     );
 }
