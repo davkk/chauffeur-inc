@@ -34,6 +34,13 @@ pub fn main() !void {
         car.draw();
         for (&buildings) |building| {
             building.draw();
+
+            _ = collision.collide(
+                &car.rect(),
+                car.angle,
+                &building.rect,
+                0,
+            );
         }
 
         // const car_vertices = collision.get_vertices(&car.rect(), car.angle);

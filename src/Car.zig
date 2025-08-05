@@ -11,6 +11,11 @@ const Tire = struct {
     size: rl.Vector2,
 };
 
+const Tires = struct {
+    front: Tire,
+    rear: Tire,
+};
+
 const Self = @This();
 
 pos: rl.Vector2,
@@ -28,8 +33,7 @@ inertia: f32,
 
 angle: f32,
 
-tire_front: Tire,
-tire_rear: Tire,
+tires: Tires,
 
 pub fn init() Self {
     const width = 32;
@@ -57,44 +61,11 @@ pub fn init() Self {
 
         .angle = 0.0,
 
-        .tire_front = .{
-            .size = .{ .x = width / 4, .y = height / 4 },
-        },
-        .tire_rear = .{
-            .size = .{ .x = width / 4, .y = height / 4 },
+        .tires = .{
+            .front = .{ .size = .{ .x = width / 4, .y = height / 4 } },
+            .rear = .{ .size = .{ .x = width / 4, .y = height / 4 } },
         },
     };
-}
-
-fn handle_inputs(self: *Self, move_dir: f32) void {
-    if (rl.IsKeyDown(rl.KEY_A)) {
-        self.steer = -1;
-    } else if (rl.IsKeyDown(rl.KEY_D)) {
-        self.steer = 1;
-    } else {
-        self.steer = 0;
-    }
-
-    if (rl.IsKeyDown(rl.KEY_W)) {
-        if (move_dir >= 0) {
-            self.throttle = 1;
-            self.brake = 0;
-        } else {
-            self.throttle = 0;
-            self.brake = 1;
-        }
-    } else if (rl.IsKeyDown(rl.KEY_S)) {
-        if (move_dir <= 0) {
-            self.throttle = -1;
-            self.brake = 0;
-        } else {
-            self.throttle = 0;
-            self.brake = 1;
-        }
-    } else {
-        self.throttle = 0;
-        self.brake = 0;
-    }
 }
 
 pub fn update(self: *Self, time: f32) void {
@@ -110,7 +81,34 @@ pub fn update(self: *Self, time: f32) void {
     const vel_x = rl.Vector2DotProduct(right, self.vel);
     const vel_y = rl.Vector2DotProduct(forward, self.vel);
 
-    handle_inputs(self, vel_y);
+    if (rl.IsKeyDown(rl.KEY_A)) {
+        self.steer = @max(-1, self.steer - g.STEER_SPEED * time);
+    } else if (rl.IsKeyDown(rl.KEY_D)) {
+        self.steer = @min(1, self.steer + g.STEER_SPEED * time);
+    } else {
+        self.steer = @max(0, self.steer - math.sign(self.steer) * 2 * g.STEER_SPEED * time);
+    }
+
+    if (rl.IsKeyDown(rl.KEY_W)) {
+        if (vel_y >= 0) {
+            self.throttle = 1;
+            self.brake = 0;
+        } else {
+            self.throttle = 0;
+            self.brake = 1;
+        }
+    } else if (rl.IsKeyDown(rl.KEY_S)) {
+        if (vel_y <= 0) {
+            self.throttle = -1;
+            self.brake = 0;
+        } else {
+            self.throttle = 0;
+            self.brake = 1;
+        }
+    } else {
+        self.throttle = 0;
+        self.brake = 0;
+    }
 
     const F_drag = rl.Vector2Scale(self.vel, -g.DRAG_FACTOR * rl.Vector2Length(self.vel));
     const F_rr = rl.Vector2Scale(self.vel, -g.ROLLING_RESISTANCE);
@@ -133,20 +131,15 @@ pub fn update(self: *Self, time: f32) void {
     const slip_rear = math.atan2(vel_x - self.angular_vel * axel, @abs(vel_y));
 
     const F_lat_front_mag = -g.CORNERING_STIFFNESS_FRONT * slip_front;
-    const F_lat_front = rl.Vector2Scale(right, F_lat_front_mag);
-
     const F_lat_rear_mag = -g.CORNERING_STIFFNESS_REAR * slip_rear;
+
+    const F_lat_front = rl.Vector2Scale(right, F_lat_front_mag);
     const F_lat_rear = rl.Vector2Scale(right, F_lat_rear_mag);
 
     const F_net = vec_add(&.{ F_trac, F_break, F_drag, F_rr, F_lat_front, F_lat_rear });
     const accel = rl.Vector2Scale(F_net, 1 / self.mass);
 
     self.vel = rl.Vector2Add(self.vel, rl.Vector2Scale(accel, time));
-    if (rl.Vector2Length(self.vel) < g.VELOCITY_THRESHOLD and self.throttle == 0) {
-        self.vel = rl.Vector2Zero();
-        self.angular_vel = 0;
-    }
-
     self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, time));
 
     const F_torque = axel * (F_lat_front_mag * @cos(steer_angle) - F_lat_rear_mag);
@@ -154,6 +147,11 @@ pub fn update(self: *Self, time: f32) void {
 
     self.angular_vel += angular_accel * time;
     self.angle = @mod(self.angle + self.angular_vel * time, 2 * math.pi);
+
+    if (rl.Vector2Length(self.vel) < g.VELOCITY_THRESHOLD and self.throttle == 0) {
+        self.vel = rl.Vector2Zero();
+        self.angular_vel = 0;
+    }
 }
 
 pub fn rect(self: *const Self) rl.Rectangle {
@@ -171,10 +169,10 @@ pub fn draw(self: *const Self) void {
 
     const car_rect = self.rect();
 
-    self.draw_tire_front(-4, self.tire_front.size.y / 2);
-    self.draw_tire_rear(-4, self.size.y - self.tire_rear.size.y / 2);
-    self.draw_tire_front(self.size.x + 4, self.tire_front.size.y / 2);
-    self.draw_tire_rear(self.size.x + 4, self.size.y - self.tire_rear.size.y / 2);
+    self.draw_tire(-4, self.tires.front.size.y / 2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
+    self.draw_tire(-4, self.size.y - self.tires.rear.size.y / 2, self.tires.rear, 0);
+    self.draw_tire(self.size.x + 4, self.tires.front.size.y / 2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
+    self.draw_tire(self.size.x + 4, self.size.y - self.tires.rear.size.y / 2, self.tires.rear, 0);
 
     rl.DrawRectanglePro(
         car_rect,
@@ -184,42 +182,21 @@ pub fn draw(self: *const Self) void {
     );
 }
 
-fn draw_tire_front(self: *const Self, x: f32, y: f32) void {
+fn draw_tire(self: *const Self, x: f32, y: f32, tire: Tire, steer_angle: f32) void {
     const tire_pos = vec_rotate(
         .{ .x = self.pos.x + x, .y = self.pos.y + y },
         .{ .x = self.pos.x + self.size.x / 2, .y = self.pos.y + self.size.y / 2 },
         self.angle,
     );
-
     rl.DrawRectanglePro(
         .{
             .x = tire_pos.x,
             .y = tire_pos.y,
-            .width = self.tire_front.size.x,
-            .height = self.tire_front.size.y,
+            .width = tire.size.x,
+            .height = tire.size.y,
         },
-        .{ .x = self.tire_front.size.x / 2, .y = self.tire_front.size.y / 2 },
-        (self.angle + self.steer * g.MAX_STEER_ANGLE) * 180 / math.pi,
-        rl.BLACK,
-    );
-}
-
-fn draw_tire_rear(self: *const Self, x: f32, y: f32) void {
-    const tire_pos = vec_rotate(
-        .{ .x = self.pos.x + x, .y = self.pos.y + y },
-        .{ .x = self.pos.x + self.size.x / 2, .y = self.pos.y + self.size.y / 2 },
-        self.angle,
-    );
-
-    rl.DrawRectanglePro(
-        .{
-            .x = tire_pos.x,
-            .y = tire_pos.y,
-            .width = self.tire_rear.size.x,
-            .height = self.tire_rear.size.y,
-        },
-        .{ .x = self.tire_rear.size.x / 2, .y = self.tire_rear.size.y / 2 },
-        self.angle * 180 / math.pi,
+        .{ .x = tire.size.x / 2, .y = tire.size.y / 2 },
+        (self.angle + steer_angle) * 180 / math.pi,
         rl.BLACK,
     );
 }
