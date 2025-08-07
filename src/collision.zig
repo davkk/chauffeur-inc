@@ -63,12 +63,14 @@ fn project(rect: *const rl.Rectangle, angle: f32, axis: *const rl.Vector2) struc
     return .{ min, max };
 }
 
+const CollisionResult = struct { normal: rl.Vector2, depth: f32 };
+
 pub fn collide(
     rect1: *const rl.Rectangle,
     angle1: f32,
     rect2: *const rl.Rectangle,
     angle2: f32,
-) ?rl.Vector2 {
+) ?CollisionResult {
     var depth: f32 = math.inf(f32);
     var normal: rl.Vector2 = undefined;
 
@@ -82,8 +84,9 @@ pub fn collide(
         } else {
             const overlap1 = max1 - min2;
             const overlap2 = max2 - min1;
-            if (overlap1 < overlap2) {
-                depth = overlap1;
+            const current_overlap = @min(overlap1, overlap2);
+            if (current_overlap < depth) {
+                depth = current_overlap;
                 normal = axis;
             }
         }
@@ -99,12 +102,21 @@ pub fn collide(
         } else {
             const overlap1 = max1 - min2;
             const overlap2 = max2 - min1;
-            if (overlap1 < overlap2) {
-                depth = overlap1;
+            const current_overlap = @min(overlap1, overlap2);
+            if (current_overlap < depth) {
+                depth = current_overlap;
                 normal = axis;
             }
         }
     }
 
-    return rl.Vector2Normalize(normal);
+    const center1 = rl.Vector2{ .x = rect1.x + rect1.width / 2, .y = rect1.y + rect1.height / 2 };
+    const center2 = rl.Vector2{ .x = rect2.x + rect2.width / 2, .y = rect2.y + rect2.height / 2 };
+    const dir = rl.Vector2Subtract(center2, center1);
+
+    if (rl.Vector2DotProduct(dir, normal) < 0) {
+        normal = rl.Vector2Scale(normal, -1);
+    }
+
+    return .{ .normal = normal, .depth = depth };
 }

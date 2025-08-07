@@ -41,7 +41,7 @@ pub fn init() Self {
     const mass = 3.0;
     return .{
         .pos = .{
-            .x = g.SCREEN_WIDTH / 2.0 - width / 2,
+            .x = g.SCREEN_WIDTH / 2.0,
             .y = g.SCREEN_HEIGHT - 3 * height,
         },
         .size = .{
@@ -156,17 +156,14 @@ pub fn update(self: *Self, time: f32) void {
 
 pub fn rect(self: *const Self) rl.Rectangle {
     return .{
-        .x = self.pos.x + self.size.x / 2,
-        .y = self.pos.y + self.size.y / 2,
+        .x = self.pos.x - self.size.x / 2,
+        .y = self.pos.y - self.size.y / 2,
         .width = self.size.x,
         .height = self.size.y,
     };
 }
 
 pub fn draw(self: *const Self) void {
-    const center_width = self.size.x / 2;
-    const center_height = self.size.y / 2;
-
     const car_rect = self.rect();
 
     self.draw_tire(-4, self.tires.front.size.y / 2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
@@ -176,7 +173,7 @@ pub fn draw(self: *const Self) void {
 
     rl.DrawRectanglePro(
         car_rect,
-        .{ .x = center_width, .y = center_height },
+        .{ .x = self.size.x / 2, .y = self.size.y / 2 },
         self.angle * 180 / math.pi,
         rl.YELLOW,
     );
@@ -184,8 +181,8 @@ pub fn draw(self: *const Self) void {
 
 fn draw_tire(self: *const Self, x: f32, y: f32, tire: Tire, steer_angle: f32) void {
     const tire_pos = vec_rotate(
-        .{ .x = self.pos.x + x, .y = self.pos.y + y },
-        .{ .x = self.pos.x + self.size.x / 2, .y = self.pos.y + self.size.y / 2 },
+        .{ .x = self.pos.x + x - self.size.x / 2, .y = self.pos.y + y - self.size.y / 2 },
+        self.pos,
         self.angle,
     );
     rl.DrawRectanglePro(
