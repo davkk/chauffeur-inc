@@ -164,7 +164,12 @@ pub fn rect(self: *const Self) rl.Rectangle {
 }
 
 pub fn draw(self: *const Self) void {
-    const car_rect = self.rect();
+    const car_rect = rl.Rectangle{
+        .x = self.pos.x,
+        .y = self.pos.y,
+        .width = self.size.x,
+        .height = self.size.y,
+    };
 
     self.draw_tire(-4, self.tires.front.size.y / 2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
     self.draw_tire(-4, self.size.y - self.tires.rear.size.y / 2, self.tires.rear, 0);
