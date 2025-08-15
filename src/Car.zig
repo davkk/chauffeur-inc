@@ -86,7 +86,7 @@ pub fn update(self: *Self, time: f32) void {
     } else if (rl.IsKeyDown(rl.KEY_D)) {
         self.steer = @min(1, self.steer + g.STEER_SPEED * time);
     } else {
-        self.steer = @max(0, self.steer - math.sign(self.steer) * 2 * g.STEER_SPEED * time);
+        self.steer -= math.sign(self.steer) * @min(@abs(self.steer), 2 * g.STEER_SPEED * time);
     }
 
     if (rl.IsKeyDown(rl.KEY_W)) {
@@ -127,11 +127,15 @@ pub fn update(self: *Self, time: f32) void {
     const axel = self.size.y / 2;
     const steer_angle = self.steer * g.MAX_STEER_ANGLE;
 
-    const slip_front = math.atan2(vel_x + self.angular_vel * axel, @abs(vel_y)) - math.sign(vel_y) * steer_angle;
-    const slip_rear = math.atan2(vel_x - self.angular_vel * axel, @abs(vel_y));
+    var slip_front: f32 = 0.0;
+    var slip_rear: f32 = 0.0;
+    if (@abs(vel_y) > 0.1) {
+        slip_front = math.atan2(vel_x + self.angular_vel * axel, @abs(vel_y)) - math.sign(vel_y) * steer_angle;
+        slip_rear = math.atan2(vel_x - self.angular_vel * axel, @abs(vel_y));
+    }
 
-    const F_lat_front_mag = -g.CORNERING_STIFFNESS_FRONT * slip_front;
-    const F_lat_rear_mag = -g.CORNERING_STIFFNESS_REAR * slip_rear;
+    const F_lat_front_mag = math.clamp(-g.CORNERING_STIFFNESS_FRONT * slip_front, -g.MAX_GRIP, g.MAX_GRIP);
+    const F_lat_rear_mag = math.clamp(-g.CORNERING_STIFFNESS_REAR * slip_rear, -g.MAX_GRIP, g.MAX_GRIP);
 
     const F_lat_front = rl.Vector2Scale(right, F_lat_front_mag);
     const F_lat_rear = rl.Vector2Scale(right, F_lat_rear_mag);
@@ -142,13 +146,17 @@ pub fn update(self: *Self, time: f32) void {
     self.vel = rl.Vector2Add(self.vel, rl.Vector2Scale(accel, time));
     self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, time));
 
-    const F_torque = axel * (F_lat_front_mag * @cos(steer_angle) - F_lat_rear_mag);
+    const F_torque = axel * (F_lat_front_mag - F_lat_rear_mag);
     const angular_accel = F_torque / self.inertia;
 
     self.angular_vel += angular_accel * time;
+    if (@abs(self.angular_vel) < 0.1) {
+        self.angular_vel = 0;
+    }
+
     self.angle = @mod(self.angle + self.angular_vel * time, 2 * math.pi);
 
-    if (rl.Vector2Length(self.vel) < g.VELOCITY_THRESHOLD and self.throttle == 0) {
+    if (rl.Vector2Length(self.vel) < g.VELOCITY_THRESHOLD and self.throttle == 0 and self.brake == 0) {
         self.vel = rl.Vector2Zero();
         self.angular_vel = 0;
     }

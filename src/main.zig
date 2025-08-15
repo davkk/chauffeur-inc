@@ -47,6 +47,8 @@ pub fn main() !void {
             if (result) |res| {
                 const push = rl.Vector2Scale(res.normal, -res.depth);
                 car.pos = rl.Vector2Add(car.pos, push);
+                car.vel = rl.Vector2Zero();
+                car.angular_vel = 0;
             }
         }
 
