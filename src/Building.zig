@@ -1,11 +1,13 @@
 const rl = @import("raylib.zig").rl;
 
 rect: rl.Rectangle,
+mass: f32,
 
 const Self = @This();
 
 pub fn init(x: f32, y: f32, width: f32, height: f32) Self {
     return .{
+        .mass = 10000,
         .rect = .{
             .x = x,
             .y = y,

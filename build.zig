@@ -39,6 +39,21 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const raylib = raylib_dep.artifact("raylib");
+    raylib.addLibraryPath(.{ .cwd_relative = "/lib64" });
+    raylib.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
+    raylib.addLibraryPath(.{ .cwd_relative = "/lib" });
+    raylib.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+
+    // Add header search paths for system includes
+    raylib.addSystemIncludePath(.{ .cwd_relative = "/usr/include" });
+    raylib.addSystemIncludePath(.{ .cwd_relative = "/usr/include/X11" });
+    raylib.addSystemIncludePath(.{ .cwd_relative = "/usr/include/wayland" });
+
+    // Also add to the executable
+    exe.addLibraryPath(.{ .cwd_relative = "/lib64" });
+    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
+    exe.addLibraryPath(.{ .cwd_relative = "/lib" });
+    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     exe.linkLibrary(raylib);
 
     // This declares intent for the executable to be installed into the

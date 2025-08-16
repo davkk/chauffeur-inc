@@ -62,8 +62,8 @@ pub fn init() Self {
         .angle = 0.0,
 
         .tires = .{
-            .front = .{ .size = .{ .x = width / 4, .y = height / 4 } },
-            .rear = .{ .size = .{ .x = width / 4, .y = height / 4 } },
+            .front = .{ .size = .{ .x = width / 5, .y = height / 5 } },
+            .rear = .{ .size = .{ .x = width / 5, .y = height / 5 } },
         },
     };
 }
@@ -179,10 +179,10 @@ pub fn draw(self: *const Self) void {
         .height = self.size.y,
     };
 
-    self.draw_tire(-4, self.tires.front.size.y / 2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
-    self.draw_tire(-4, self.size.y - self.tires.rear.size.y / 2, self.tires.rear, 0);
-    self.draw_tire(self.size.x + 4, self.tires.front.size.y / 2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
-    self.draw_tire(self.size.x + 4, self.size.y - self.tires.rear.size.y / 2, self.tires.rear, 0);
+    self.draw_tire(-1, self.tires.front.size.y, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
+    self.draw_tire(-1, self.size.y - self.tires.rear.size.y, self.tires.rear, 0);
+    self.draw_tire(self.size.x + 1, self.tires.front.size.y, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
+    self.draw_tire(self.size.x + 1, self.size.y - self.tires.rear.size.y, self.tires.rear, 0);
 
     rl.DrawRectanglePro(
         car_rect,
