@@ -18,6 +18,8 @@ const Tires = struct {
 
 const Self = @This();
 
+texture: rl.Texture2D,
+
 pos: rl.Vector2,
 size: rl.Vector2,
 
@@ -39,7 +41,12 @@ pub fn init() Self {
     const width = 32;
     const height = 64;
     const mass = 3.0;
+
+    const image = rl.LoadImage("assets/taxi-car.png");
+
     return .{
+        .texture = rl.LoadTextureFromImage(image),
+
         .pos = .{
             .x = g.SCREEN_WIDTH / 2.0,
             .y = g.SCREEN_HEIGHT - 3 * height,
@@ -66,6 +73,10 @@ pub fn init() Self {
             .rear = .{ .size = .{ .x = width / 5, .y = height / 5 } },
         },
     };
+}
+
+pub fn deinit(self: *Self) void {
+    rl.UnloadTexture(self.texture);
 }
 
 pub fn update(self: *Self, time: f32) void {
@@ -127,12 +138,8 @@ pub fn update(self: *Self, time: f32) void {
     const axel = self.size.y / 2;
     const steer_angle = self.steer * g.MAX_STEER_ANGLE;
 
-    var slip_front: f32 = 0.0;
-    var slip_rear: f32 = 0.0;
-    if (@abs(vel_y) > 0.1) {
-        slip_front = math.atan2(vel_x + self.angular_vel * axel, @abs(vel_y)) - math.sign(vel_y) * steer_angle;
-        slip_rear = math.atan2(vel_x - self.angular_vel * axel, @abs(vel_y));
-    }
+    const slip_front = math.atan2(vel_x + self.angular_vel * axel, @abs(vel_y)) - math.sign(vel_y) * steer_angle;
+    const slip_rear = math.atan2(vel_x - self.angular_vel * axel, @abs(vel_y));
 
     const F_lat_front_mag = math.clamp(-g.CORNERING_STIFFNESS_FRONT * slip_front, -g.MAX_GRIP, g.MAX_GRIP);
     const F_lat_rear_mag = math.clamp(-g.CORNERING_STIFFNESS_REAR * slip_rear, -g.MAX_GRIP, g.MAX_GRIP);
@@ -140,7 +147,14 @@ pub fn update(self: *Self, time: f32) void {
     const F_lat_front = rl.Vector2Scale(right, F_lat_front_mag);
     const F_lat_rear = rl.Vector2Scale(right, F_lat_rear_mag);
 
-    const F_net = vec_add(&.{ F_trac, F_break, F_drag, F_rr, F_lat_front, F_lat_rear });
+    const F_net = vec_add(&.{
+        F_trac,
+        F_break,
+        F_drag,
+        F_rr,
+        F_lat_front,
+        F_lat_rear,
+    });
     const accel = rl.Vector2Scale(F_net, 1 / self.mass);
 
     self.vel = rl.Vector2Add(self.vel, rl.Vector2Scale(accel, time));
@@ -150,16 +164,16 @@ pub fn update(self: *Self, time: f32) void {
     const angular_accel = F_torque / self.inertia;
 
     self.angular_vel += angular_accel * time;
-    if (@abs(self.angular_vel) < 0.1) {
+    if (@abs(self.angular_vel) < 1e-1) {
+        self.angular_vel = 0;
+    }
+
+    if (@abs(rl.Vector2Length(self.vel)) < g.VELOCITY_THRESHOLD) {
+        self.vel = rl.Vector2Zero();
         self.angular_vel = 0;
     }
 
     self.angle = @mod(self.angle + self.angular_vel * time, 2 * math.pi);
-
-    if (rl.Vector2Length(self.vel) < g.VELOCITY_THRESHOLD and self.throttle == 0 and self.brake == 0) {
-        self.vel = rl.Vector2Zero();
-        self.angular_vel = 0;
-    }
 }
 
 pub fn rect(self: *const Self) rl.Rectangle {
@@ -172,23 +186,18 @@ pub fn rect(self: *const Self) rl.Rectangle {
 }
 
 pub fn draw(self: *const Self) void {
-    const car_rect = rl.Rectangle{
-        .x = self.pos.x,
-        .y = self.pos.y,
-        .width = self.size.x,
-        .height = self.size.y,
-    };
+    self.draw_tire(0, self.tires.front.size.y / 1.2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
+    self.draw_tire(0, self.size.y - self.tires.rear.size.y / 1.2, self.tires.rear, 0);
+    self.draw_tire(self.size.x, self.tires.front.size.y / 1.2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
+    self.draw_tire(self.size.x, self.size.y - self.tires.rear.size.y / 1.2, self.tires.rear, 0);
 
-    self.draw_tire(-1, self.tires.front.size.y, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
-    self.draw_tire(-1, self.size.y - self.tires.rear.size.y, self.tires.rear, 0);
-    self.draw_tire(self.size.x + 1, self.tires.front.size.y, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
-    self.draw_tire(self.size.x + 1, self.size.y - self.tires.rear.size.y, self.tires.rear, 0);
-
-    rl.DrawRectanglePro(
-        car_rect,
+    rl.DrawTexturePro(
+        self.texture,
+        .{ .x = 0, .y = 0, .width = self.size.x, .height = self.size.y },
+        .{ .x = self.pos.x, .y = self.pos.y, .width = self.size.x, .height = self.size.y },
         .{ .x = self.size.x / 2, .y = self.size.y / 2 },
         self.angle * 180 / math.pi,
-        rl.YELLOW,
+        rl.WHITE,
     );
 }
 
