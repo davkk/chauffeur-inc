@@ -17,7 +17,6 @@ const Tileset = struct {
     fn init() Tileset {
         const tileset_image = rl.LoadImage("assets/tileset.png");
         const tileset = rl.LoadTextureFromImage(tileset_image);
-
         return Tileset{
             .texture = tileset,
             .cols = @divTrunc(tileset_image.width, g.TILE_SIZE),
@@ -52,6 +51,10 @@ fn getNumberInt(value: json.Value) !i64 {
     };
 }
 
+const FLIP_HORI: u32 = 0x80000000;
+const FLIP_VERT: u32 = 0x40000000;
+const FLIP_DIAG: u32 = 0x20000000;
+
 fn drawLayer(tileset: Tileset, layer: Layer) void {
     const layer_rows: usize = @intCast(layer.rows);
     const layer_cols: usize = @intCast(layer.cols);
@@ -63,10 +66,16 @@ fn drawLayer(tileset: Tileset, layer: Layer) void {
             var tile_id: usize = @intCast(layer.data[y * layer_cols + x].integer);
             if (tile_id == 0) continue;
 
-            tile_id -= 1; // subtract firstgid
+            var angle: f32 = 0;
+            switch (tile_id & 0xFF000000) {
+                FLIP_DIAG | FLIP_VERT => angle = -math.pi / 2.0,
+                FLIP_HORI | FLIP_VERT => angle = -math.pi,
+                FLIP_DIAG | FLIP_HORI => angle = -3.0 * math.pi / 2.0,
+                else => {},
+            }
 
-            // TODO: handle tile rotation
-            tile_id &= 0xFF;
+            tile_id &= ~(FLIP_HORI | FLIP_VERT | FLIP_DIAG);
+            tile_id -= 1; // subtract firstgid
 
             rl.DrawTexturePro(
                 tileset.texture,
@@ -77,13 +86,13 @@ fn drawLayer(tileset: Tileset, layer: Layer) void {
                     .height = @floatFromInt(g.TILE_SIZE),
                 },
                 .{
-                    .x = @floatFromInt(x * g.TILE_SIZE),
-                    .y = @floatFromInt(y * g.TILE_SIZE),
-                    .width = @floatFromInt(g.TILE_SIZE),
-                    .height = @floatFromInt(g.TILE_SIZE),
+                    .x = @floatFromInt(g.SCALE * (x * g.TILE_SIZE + g.TILE_SIZE / 2)),
+                    .y = @floatFromInt(g.SCALE * (y * g.TILE_SIZE + g.TILE_SIZE / 2)),
+                    .width = @floatFromInt(g.SCALE * g.TILE_SIZE),
+                    .height = @floatFromInt(g.SCALE * g.TILE_SIZE),
                 },
-                .{ .x = 0, .y = 0 },
-                0,
+                .{ .x = g.SCALE * g.TILE_SIZE / 2, .y = g.SCALE * g.TILE_SIZE / 2 },
+                angle * 180 / math.pi,
                 rl.WHITE,
             );
         }
@@ -118,27 +127,21 @@ pub fn main() !void {
     const root = parsed.value;
     const layers = root.object.get("layers").?.array.items;
 
-    std.debug.assert(std.mem.eql(u8, layers[0].object.get("type").?.string, "tilelayer") and
+    std.debug.assert(std.mem.eql(u8, layers[@intFromEnum(g.Layers.BACKGROUND)].object.get("type").?.string, "tilelayer") and
         std.mem.eql(u8, layers[0].object.get("name").?.string, "background"));
 
-    const map_width = root.object.get("width").?.integer;
-    const map_height = root.object.get("height").?.integer;
+    const map_width = try getNumberInt(root.object.get("width").?);
+    const map_height = try getNumberInt(root.object.get("height").?);
 
-    const background_layer = Layer{
-        .data = layers[0].object.get("data").?.array.items,
-        .cols = map_width,
-        .rows = map_height,
-    };
-
-    const buildings_json = layers[2].object.get("objects").?.array.items;
+    const buildings_json = layers[@intFromEnum(g.Layers.OBJECTS)].object.get("objects").?.array.items;
     var buildings = try std.ArrayList(Building).initCapacity(allocator, buildings_json.len);
     defer buildings.deinit();
 
     for (buildings_json) |b| {
-        const x: f32 = try getNumberFloat(b.object.get("x").?);
-        const y: f32 = try getNumberFloat(b.object.get("y").?);
-        const width: f32 = try getNumberFloat(b.object.get("width").?);
-        const height: f32 = try getNumberFloat(b.object.get("height").?);
+        const x: f32 = g.SCALE * try getNumberFloat(b.object.get("x").?);
+        const y: f32 = g.SCALE * try getNumberFloat(b.object.get("y").?);
+        const width: f32 = g.SCALE * try getNumberFloat(b.object.get("width").?);
+        const height: f32 = g.SCALE * try getNumberFloat(b.object.get("height").?);
         const building = Building.init(x, y, width, height);
         try buildings.append(building);
     }
@@ -159,9 +162,31 @@ pub fn main() !void {
 
         rl.BeginMode2D(camera);
 
-        drawLayer(tileset, background_layer);
+        drawLayer(tileset, Layer{
+            .data = layers[@intFromEnum(g.Layers.BACKGROUND)].object.get("data").?.array.items,
+            .cols = map_width,
+            .rows = map_height,
+        });
 
         car.draw();
+
+        for (layers[@intFromEnum(g.Layers.FOREGROUND)..]) |layer| {
+            if (std.mem.eql(u8, layer.object.get("type").?.string, "tilelayer")) {
+                drawLayer(tileset, Layer{
+                    .data = layer.object.get("data").?.array.items,
+                    .cols = map_width,
+                    .rows = map_height,
+                });
+            } else if (std.mem.eql(u8, layer.object.get("type").?.string, "group")) {
+                for (layer.object.get("layers").?.array.items) |inner_layer| {
+                    drawLayer(tileset, Layer{
+                        .data = inner_layer.object.get("data").?.array.items,
+                        .cols = map_width,
+                        .rows = map_height,
+                    });
+                }
+            }
+        }
 
         // for (&buildings) |building| {
         //     building.draw();
@@ -204,28 +229,28 @@ pub fn main() !void {
         rl.DrawText(rl.TextFormat("angular_vel: %.2f", car.angular_vel), 10, 110, 20, rl.WHITE);
         rl.DrawText(rl.TextFormat("vel: %.2f", rl.Vector2Length(car.vel)), 10, 135, 20, rl.WHITE);
 
-        // for (buildings.items) |building| {
-        //     const result = collision.collide(
-        //         &car.rect(),
-        //         car.angle,
-        //         &building.rect,
-        //         0,
-        //     );
-        //
-        //     if (result) |res| {
-        //         const push = rl.Vector2Scale(res.normal, -res.depth);
-        //         car.pos = rl.Vector2Add(car.pos, push);
-        //
-        //         const tangent = rl.Vector2{ .x = res.normal.y, .y = -res.normal.x };
-        //
-        //         const num = -g.ELASTICITY * rl.Vector2DotProduct(rl.Vector2Subtract(car.vel, rl.Vector2Zero()), res.normal);
-        //         const den_lin = 1 / car.mass;
-        //         const den_ang = rl.Vector2DotProduct(res.normal, rl.Vector2Scale(tangent, 1 / car.inertia));
-        //         const impulse = num / (den_lin + den_ang);
-        //
-        //         car.vel = rl.Vector2Add(car.vel, rl.Vector2Scale(res.normal, impulse / car.mass));
-        //         car.angular_vel += tangent.x * impulse / car.inertia;
-        //     }
-        // }
+        for (buildings.items) |building| {
+            const result = collision.collide(
+                &car.rect(),
+                car.angle,
+                &building.rect,
+                0,
+            );
+
+            if (result) |res| {
+                const push = rl.Vector2Scale(res.normal, -res.depth);
+                car.pos = rl.Vector2Add(car.pos, push);
+
+                const tangent = rl.Vector2{ .x = res.normal.y, .y = -res.normal.x };
+
+                const num = -g.ELASTICITY * rl.Vector2DotProduct(rl.Vector2Subtract(car.vel, rl.Vector2Zero()), res.normal);
+                const den_lin = 1 / car.mass;
+                const den_ang = rl.Vector2DotProduct(res.normal, rl.Vector2Scale(tangent, 1 / car.inertia));
+                const impulse = num / (den_lin + den_ang);
+
+                car.vel = rl.Vector2Add(car.vel, rl.Vector2Scale(res.normal, impulse / car.mass));
+                car.angular_vel += tangent.x * impulse / car.inertia;
+            }
+        }
     }
 }

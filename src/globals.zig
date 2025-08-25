@@ -1,11 +1,18 @@
 const math = @import("std").math;
 
+pub const Layers = enum(usize) {
+    BACKGROUND = 0,
+    FOREGROUND,
+    BUILDINGS,
+    OBJECTS,
+};
+
 pub const TILE_SIZE = 64;
 
 pub const SCREEN_WIDTH = 1600;
 pub const SCREEN_HEIGHT = 1200;
 
-pub const SCALE: f32 = 2;
+pub const SCALE: i32 = 2;
 
 pub const TARGET_FPS = 60;
 
