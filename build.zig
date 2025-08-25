@@ -1,98 +1,79 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
-pub fn build(b: *std.Build) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    // We will also create a module for our other entry point, 'main.zig'.
-    const exe_mod = b.createModule(.{
-        // `root_source_file` is the Zig "entry point" of the module. If a module
-        // only contains e.g. external object files, you can make this `null`.
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // This creates another `std.Build.Step.Compile`, but this one builds an executable
-    // rather than a static library.
-    const exe = b.addExecutable(.{
-        .name = "chauffeur_inc",
-        .root_module = exe_mod,
-    });
-
-    // This adds a dependency to the Raylib Cn library
+    // Raylib
     const raylib_dep = b.dependency("raylib", .{
         .target = target,
         .optimize = optimize,
     });
     const raylib = raylib_dep.artifact("raylib");
-    raylib.addLibraryPath(.{ .cwd_relative = "/lib64" });
-    raylib.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
-    raylib.addLibraryPath(.{ .cwd_relative = "/lib" });
-    raylib.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
 
-    // Add header search paths for system includes
-    raylib.addSystemIncludePath(.{ .cwd_relative = "/usr/include" });
-    raylib.addSystemIncludePath(.{ .cwd_relative = "/usr/include/X11" });
-    raylib.addSystemIncludePath(.{ .cwd_relative = "/usr/include/wayland" });
-
-    // Also add to the executable
-    exe.addLibraryPath(.{ .cwd_relative = "/lib64" });
-    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
-    exe.addLibraryPath(.{ .cwd_relative = "/lib" });
-    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
-    exe.linkLibrary(raylib);
-
-    // This declares intent for the executable to be installed into the
-    // standard location when the user invokes the "install" step (the default
-    // step when running `zig build`).
-    b.installArtifact(exe);
-
-    // This *creates* a Run step in the build graph, to be executed when another
-    // step is evaluated that depends on it. The next line below will establish
-    // such a dependency.
-    const run_cmd = b.addRunArtifact(exe);
-
-    // By making the run step depend on the install step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    // This is not necessary, however, if the application depends on other installed
-    // files, this ensures they will be present and in the expected location.
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    const exe_unit_tests = b.addTest(.{
-        .root_module = exe_mod,
+    const game_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    const game_exe = b.addExecutable(.{
+        .name = "chauffeur_inc",
+        .root_module = game_mod,
+    });
+    game_exe.linkLibrary(raylib);
 
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    const export_tileset_cmd = b.addSystemCommand(&[_][]const u8{
+        "libresprite",
+        "-b",
+        b.path("assets/tileset.ase").getPath(b),
+        "--save-as",
+        b.path("assets/tileset.png").getPath(b),
+    });
+    game_exe.step.dependOn(&export_tileset_cmd.step);
+    b.step("export:tileset", "Export tileset assets").dependOn(&game_exe.step);
 
-    // Similar to creating the run step earlier, this exposes a `test` step to
-    // the `zig build --help` menu, providing a way for the user to request
-    // running the unit tests.
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
+    const export_map_cmd = b.addSystemCommand(&[_][]const u8{
+        "tiled",
+        "--export-map",
+        "assets/map.tmx",
+        "assets/map.json",
+    });
+    export_map_cmd.setEnvironmentVariable("QT_QPA_PLATFORM", "xcb");
+    game_exe.step.dependOn(&export_map_cmd.step);
+    b.step("export:map", "Export map assets").dependOn(&game_exe.step);
+
+    b.installArtifact(game_exe);
+
+    const editor_mod = b.createModule(.{
+        .root_source_file = b.path("src/editor.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const editor_exe = b.addExecutable(.{
+        .name = "editor",
+        .root_module = editor_mod,
+    });
+    editor_exe.linkLibrary(raylib);
+    b.installArtifact(editor_exe);
+
+    const run_game = b.addRunArtifact(game_exe);
+    if (b.args) |args| {
+        run_game.addArgs(args);
+    }
+    b.step("run:game", "Run the game").dependOn(&run_game.step);
+
+    const run_editor = b.addRunArtifact(editor_exe);
+    if (b.args) |args| {
+        run_editor.addArgs(args);
+    }
+    b.step("run:editor", "Run the editor").dependOn(&run_editor.step);
+
+    // const exe_unit_tests = b.addTest(.{
+    //     .root_module = exe_mod,
+    // });
+    //
+    // const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    //
+    // const test_step = b.step("test", "Run unit tests");
+    // test_step.dependOn(&run_exe_unit_tests.step);
 }

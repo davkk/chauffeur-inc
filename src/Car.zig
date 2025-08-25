@@ -48,8 +48,8 @@ pub fn init() Self {
         .texture = rl.LoadTextureFromImage(image),
 
         .pos = .{
-            .x = g.SCREEN_WIDTH / 2.0,
-            .y = g.SCREEN_HEIGHT - 3 * height,
+            .x = 0,
+            .y = 0,
         },
         .size = .{
             .x = width,
@@ -168,7 +168,7 @@ pub fn update(self: *Self, time: f32) void {
         self.angular_vel = 0;
     }
 
-    if (@abs(rl.Vector2Length(self.vel)) < g.VELOCITY_THRESHOLD) {
+    if (@abs(rl.Vector2Length(self.vel)) < g.VELOCITY_THRESHOLD and self.brake == 0 and self.throttle == 0) {
         self.vel = rl.Vector2Zero();
         self.angular_vel = 0;
     }
