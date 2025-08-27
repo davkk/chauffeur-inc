@@ -1,12 +1,5 @@
 const math = @import("std").math;
 
-pub const Layers = enum(usize) {
-    BACKGROUND = 0,
-    FOREGROUND,
-    BUILDINGS,
-    OBJECTS,
-};
-
 pub const TILE_SIZE = 64;
 
 pub const SCREEN_WIDTH = 1600;

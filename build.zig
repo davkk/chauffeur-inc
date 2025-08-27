@@ -25,9 +25,9 @@ pub fn build(b: *std.Build) !void {
     const export_tileset_cmd = b.addSystemCommand(&[_][]const u8{
         "libresprite",
         "-b",
-        b.path("assets/tileset.ase").getPath(b),
+        b.path("src/assets/tileset.ase").getPath(b),
         "--save-as",
-        b.path("assets/tileset.png").getPath(b),
+        b.path("src/assets/tileset.png").getPath(b),
     });
     game_exe.step.dependOn(&export_tileset_cmd.step);
     b.step("export:tileset", "Export tileset assets").dependOn(&game_exe.step);
@@ -35,8 +35,8 @@ pub fn build(b: *std.Build) !void {
     const export_map_cmd = b.addSystemCommand(&[_][]const u8{
         "tiled",
         "--export-map",
-        "assets/map.tmx",
-        "assets/map.json",
+        "src/assets/map.tmx",
+        "src/assets/map.json",
     });
     export_map_cmd.setEnvironmentVariable("QT_QPA_PLATFORM", "xcb");
     game_exe.step.dependOn(&export_map_cmd.step);

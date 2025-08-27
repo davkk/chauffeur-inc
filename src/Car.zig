@@ -42,10 +42,11 @@ pub fn init() Self {
     const height = 64;
     const mass = 3.0;
 
-    const image = rl.LoadImage("assets/taxi-car.png");
+    const image = @embedFile("assets/taxi-car.png");
+    const taxi_image = rl.LoadImageFromMemory(".png", image.ptr, @intCast(image.len));
 
     return .{
-        .texture = rl.LoadTextureFromImage(image),
+        .texture = rl.LoadTextureFromImage(taxi_image),
 
         .pos = .{
             .x = 0,
