@@ -11,11 +11,18 @@ const Car = @import("Car.zig");
 const Tileset = @import("Tileset.zig");
 
 pub fn main() !void {
+    rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc");
+    rl.SetTargetFPS(g.TARGET_FPS);
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc");
+    const map = try Map.init(alloc);
+    defer map.deinit();
+
+    const tileset = Tileset.init();
+    defer tileset.deinit();
 
     var car = Car.init();
     defer car.deinit();
@@ -26,14 +33,6 @@ pub fn main() !void {
         .rotation = car.angle,
         .zoom = 2,
     };
-
-    rl.SetTargetFPS(g.TARGET_FPS);
-
-    const map = try Map.init(alloc);
-    defer map.deinit();
-
-    const tileset = Tileset.init();
-    defer tileset.deinit();
 
     while (!rl.WindowShouldClose()) {
         const time = rl.GetFrameTime();
@@ -47,46 +46,11 @@ pub fn main() !void {
         rl.ClearBackground(rl.GRAY);
 
         rl.BeginMode2D(camera);
-
-        map.draw_background(tileset);
-
-        car.draw();
-
-        map.draw_foreground(tileset);
-
-        // for (&buildings) |building| {
-        //     building.draw();
-        // }
-
-        // const car_vertices = collision.get_vertices(&car.rect(), car.angle);
-        // for (car_vertices, 0..) |vertex, i| {
-        //     const color = switch (i) {
-        //         0 => rl.RED,
-        //         1 => rl.GREEN,
-        //         2 => rl.BLUE,
-        //         3 => rl.YELLOW,
-        //         else => rl.WHITE,
-        //     };
-        //     rl.DrawCircleV(vertex, 6, color);
-        // }
-
-        // for (buildings) |building| {
-        //     const building_verices = collision.get_vertices(&building.rect, 0);
-        //     for (building_verices, 0..) |vertex, i| {
-        //         const color = switch (i) {
-        //             0 => rl.RED,
-        //             1 => rl.GREEN,
-        //             2 => rl.BLUE,
-        //             3 => rl.YELLOW,
-        //             else => rl.WHITE,
-        //         };
-        //         rl.DrawCircleV(vertex, 6, color);
-        //     }
-        // }
-
-        // const vel_end = rl.Vector2Add(car.pos, rl.Vector2Scale(car.vel, 0.5));
-        // rl.DrawLineEx(car.pos, vel_end, 2, rl.WHITE);
-
+        {
+            map.draw_background(tileset);
+            car.draw();
+            map.draw_foreground(tileset);
+        }
         rl.EndMode2D();
 
         rl.DrawText(rl.TextFormat("throttle: %.1f", car.throttle), 10, 10, 20, rl.WHITE);
