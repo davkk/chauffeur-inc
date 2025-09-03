@@ -1,4 +1,5 @@
 const std = @import("std");
+const rl = @import("raylib");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -10,6 +11,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     const raylib = raylib_dep.artifact("raylib");
+    rl.addRaygui(b, raylib, b.dependency("raygui", .{}), .{});
 
     const game_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),

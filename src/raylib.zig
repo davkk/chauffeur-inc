@@ -1,6 +1,7 @@
 const math = @import("std").math;
 pub const rl = @cImport({
     @cInclude("raylib.h");
+    @cInclude("raygui.h");
     @cInclude("raymath.h");
     @cInclude("rlgl.h");
 });
