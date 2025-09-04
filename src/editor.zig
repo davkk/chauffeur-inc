@@ -40,12 +40,31 @@ const Editor = struct {
     active_node_id: ?std.meta.FieldType(Node, .id),
 };
 
-fn is_too_close(pos: rl.Vector2, nodes: []Node) bool {
-    for (nodes) |node| {
+fn hovered_node(mouse_pos: *const rl.Vector2, nodes: []Node) ?*Node {
+    for (nodes) |*node| {
         if (!node.active) continue;
-        if (rl.Vector2Distance(node.pos, pos) < MIN_DISTANCE) return true;
+        if (rl.CheckCollisionPointCircle(mouse_pos.*, node.pos, 20)) {
+            return node;
+        }
     }
-    return false;
+    return null;
+}
+
+fn hovered_edge(mouse_pos: *const rl.Vector2, nodes: []Node) ?struct { *Node, *Node } {
+    for (nodes) |*node1| {
+        if (!node1.active) continue;
+        for (node1.edges.keys()) |edge| {
+            if (node1.id > edge) continue;
+
+            const node2 = &nodes[edge];
+            if (!node2.active) continue;
+
+            if (rl.CheckCollisionPointLine(mouse_pos.*, node1.pos, node2.pos, 20)) {
+                return .{ node1, node2 };
+            }
+        }
+    }
+    return null;
 }
 
 pub fn main() !void {
@@ -105,7 +124,7 @@ pub fn main() !void {
         for (nodes.items) |*node1| {
             if (!node1.active) continue;
             for (nodes.items) |*node2| {
-                if (!node2.active or node1.id == node2.id) continue;
+                if (!node2.active or node1.id > node2.id) continue;
                 if (node1.edges.get(node2.id)) |_| {
                     rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, INACTIVE_COLOR);
                 }
@@ -123,13 +142,9 @@ pub fn main() !void {
                     var new_node: *Node = undefined;
                     var found = false;
 
-                    for (nodes.items) |*node2| {
-                        if (!node2.active) continue;
-                        if (rl.CheckCollisionPointCircle(mouse_pos, node2.pos, 40)) {
-                            new_node = node2;
-                            found = true;
-                            break;
-                        }
+                    if (hovered_node(&mouse_pos, nodes.items)) |node2| {
+                        new_node = node2;
+                        found = true;
                     }
 
                     rl.DrawLineEx(nodes.items[node_id].pos, mouse_pos, LINE_THICKNESS, ACTIVE_COLOR);
@@ -140,7 +155,7 @@ pub fn main() !void {
                     }
 
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                        if (!found and !is_too_close(mouse_pos, nodes.items)) {
+                        if (!found) {
                             try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
                             new_node = &nodes.items[nodes.items.len - 1];
                         }
@@ -149,37 +164,31 @@ pub fn main() !void {
                         editor.active_node_id = null;
                     }
                 } else {
-                    for (nodes.items) |*node1| {
-                        if (!node1.active) continue;
-                        if (rl.CheckCollisionPointCircle(mouse_pos, node1.pos, 20)) {
-                            rl.DrawCircleV(node1.pos, 20, ACTIVE_COLOR);
+                    if (hovered_node(&mouse_pos, nodes.items)) |node1| {
+                        rl.DrawCircleV(node1.pos, 20, ACTIVE_COLOR);
 
-                            if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                                editor.active_node_id = node1.id;
-                            } else if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_RIGHT)) {
-                                node1.active = false;
-                                for (nodes.items) |*node| {
-                                    if (node.active) {
-                                        _ = node.edges.swapRemove(node1.id);
-                                    }
-                                }
-                                if (editor.active_node_id) |active| {
-                                    if (active == node1.id) {
-                                        editor.active_node_id = null;
-                                    }
+                        if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                            editor.active_node_id = node1.id;
+                        } else if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT)) {
+                            node1.active = false;
+                            for (nodes.items) |*node| {
+                                if (node.active) {
+                                    _ = node.edges.swapRemove(node1.id);
                                 }
                             }
-                            break;
-                        }
-                        for (node1.edges.keys()) |edge| {
-                            const node2 = &nodes.items[edge];
-                            if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 20)) {
-                                rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-                                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_RIGHT)) {
-                                    _ = node1.edges.swapRemove(node2.id);
-                                    _ = node2.edges.swapRemove(node1.id);
+                            if (editor.active_node_id) |active| {
+                                if (active == node1.id) {
+                                    editor.active_node_id = null;
                                 }
-                                break;
+                            }
+                        }
+                    } else {
+                        if (hovered_edge(&mouse_pos, nodes.items)) |edge| {
+                            const node1, const node2 = edge;
+                            rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
+                            if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT)) {
+                                _ = node1.edges.swapRemove(node2.id);
+                                _ = node2.edges.swapRemove(node1.id);
                             }
                         }
                     }
@@ -189,9 +198,7 @@ pub fn main() !void {
                 rl.DrawCircleV(mouse_pos, 20, ACTIVE_COLOR);
 
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    if (!is_too_close(mouse_pos, nodes.items)) {
-                        try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
-                    }
+                    try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
                 }
             },
             .add_node_multi => {
@@ -206,15 +213,13 @@ pub fn main() !void {
                 rl.DrawCircleLinesV(mouse_pos, RANGE, ACTIVE_COLOR);
 
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    if (!is_too_close(mouse_pos, nodes.items)) {
-                        try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
-                        const new_node = &nodes.items[nodes.items.len - 1];
-                        for (nodes.items) |*node| {
-                            if (!node.active or node.id == new_node.id) continue;
-                            if (rl.Vector2Distance(node.pos, mouse_pos) < RANGE) {
-                                try new_node.edges.put(node.id, {});
-                                try nodes.items[node.id].edges.put(new_node.id, {});
-                            }
+                    try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
+                    const new_node = &nodes.items[nodes.items.len - 1];
+                    for (nodes.items) |*node| {
+                        if (!node.active or node.id == new_node.id) continue;
+                        if (rl.Vector2Distance(node.pos, mouse_pos) < RANGE) {
+                            try new_node.edges.put(node.id, {});
+                            try nodes.items[node.id].edges.put(new_node.id, {});
                         }
                     }
                 }
