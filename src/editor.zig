@@ -4,10 +4,10 @@ const json = std.json;
 const rl = @import("raylib.zig").rl;
 const g = @import("globals.zig");
 
-const RANGE = 200;
-const LINE_THICKNESS = 40.0;
+const Tileset = @import("Tileset.zig");
 
-const GRID_SIZE = 100;
+const LINE_THICKNESS = 4.0;
+
 const GRID_COLOR = rl.Color{ .r = 100, .g = 100, .b = 100, .a = 50 };
 
 const ACTIVE_COLOR = rl.WHITE;
@@ -18,7 +18,6 @@ const State = enum {
     idle,
     eraser,
     add_node_single,
-    add_node_multi,
 };
 
 const Editor = struct {
@@ -45,7 +44,7 @@ const Node = struct {
 fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Node) ?*Node {
     for (nodes) |*node| {
         if (!node.active) continue;
-        if (rl.CheckCollisionPointCircle(mouse_pos, node.pos, 20)) {
+        if (rl.CheckCollisionPointCircle(mouse_pos, node.pos, 10)) {
             return node;
         }
     }
@@ -61,7 +60,7 @@ fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Node) ?struct { *Node, *Node } {
             const node2 = &nodes[edge];
             if (!node2.active) continue;
 
-            if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 20)) {
+            if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 10)) {
                 return .{ node1, node2 };
             }
         }
@@ -70,8 +69,8 @@ fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Node) ?struct { *Node, *Node } {
 }
 
 fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
-    const snappedX = @round(pos.x / GRID_SIZE) * GRID_SIZE;
-    const snappedY = @round(pos.y / GRID_SIZE) * GRID_SIZE;
+    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
+    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
     return rl.Vector2{ .x = snappedX, .y = snappedY };
 }
 
@@ -81,10 +80,54 @@ fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
     return dx == 0 or dy == 0 or @abs(dx) == @abs(dy);
 }
 
+const Queue = std.DoublyLinkedList(usize);
+
+fn traverse(alloc: *const std.mem.Allocator, adj_list: []Node, tileset: *const Tileset) void {
+    var visited = std.AutoArrayHashMap(usize, void).init(alloc.*);
+    defer visited.deinit();
+
+    var queue = Queue{};
+    for (adj_list) |node| {
+        if (node.active) {
+            var first = Queue.Node{ .data = node.id };
+            queue.append(&first);
+            visited.put(node.id, {}) catch unreachable;
+            break;
+        }
+    }
+
+    while (queue.len > 0) {
+        const node_id = queue.popFirst().?;
+        const node = &adj_list[node_id.data];
+
+        rl.DrawTexturePro(
+            tileset.texture,
+            rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+            rl.Rectangle{ .x = node.pos.x, .y = node.pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+            rl.Vector2{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+            0,
+            rl.WHITE,
+        );
+
+        for (node.edges.keys()) |edge| {
+            if (visited.get(edge)) |_| {
+                continue;
+            }
+
+            var new_node = Queue.Node{ .data = edge };
+            queue.append(&new_node);
+            visited.put(edge, {}) catch unreachable;
+        }
+    }
+}
+
 pub fn main() !void {
-    rl.InitWindow(1600, 1000, "Chauffeur Inc - Map Editor");
+    rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc - Map Editor");
     rl.SetTargetFPS(g.TARGET_FPS);
     rl.SetExitKey(0);
+
+    const tileset = Tileset.init();
+    defer tileset.deinit();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -104,6 +147,7 @@ pub fn main() !void {
     };
 
     while (!rl.WindowShouldClose()) {
+        // const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
         if (rl.IsKeyPressed(rl.KEY_P)) {
             for (nodes.items) |*node| {
                 if (!node.active) continue;
@@ -113,23 +157,12 @@ pub fn main() !void {
                 }
                 std.debug.print("\n", .{});
             }
-        }
-
-        if (rl.IsKeyPressed(rl.KEY_V)) {
+        } else if (rl.IsKeyPressed(rl.KEY_V)) {
             editor.state = .idle;
-        }
-
-        if (rl.IsKeyPressed(rl.KEY_E)) {
+        } else if (rl.IsKeyPressed(rl.KEY_E)) {
             editor.state = .eraser;
-        }
-
-        if (rl.IsKeyPressed(rl.KEY_A)) {
+        } else if (rl.IsKeyPressed(rl.KEY_A)) {
             editor.state = .add_node_single;
-        }
-
-        const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
-        if (KEY_SHIFT and rl.IsKeyPressed(rl.KEY_A)) {
-            editor.state = .add_node_multi;
         }
 
         rl.BeginDrawing();
@@ -138,17 +171,19 @@ pub fn main() !void {
         rl.ClearBackground(rl.BLACK);
 
         var x: f32 = 0;
-        while (x <= 1600) {
-            rl.DrawLine(@intFromFloat(x + GRID_SIZE / 2), 0, @intFromFloat(x + GRID_SIZE / 2), 1000, GRID_COLOR);
-            x += GRID_SIZE;
+        while (x <= g.SCREEN_WIDTH) {
+            rl.DrawLine(@intFromFloat(x + g.TILE_SIZE / 2), 0, @intFromFloat(x + g.TILE_SIZE / 2), g.SCREEN_HEIGHT, GRID_COLOR);
+            x += g.TILE_SIZE;
         }
         var y: f32 = 0;
-        while (y <= 1000) {
-            rl.DrawLine(0, @intFromFloat(y + GRID_SIZE / 2), 1600, @intFromFloat(y + GRID_SIZE / 2), GRID_COLOR);
-            y += GRID_SIZE;
+        while (y <= g.SCREEN_HEIGHT) {
+            rl.DrawLine(0, @intFromFloat(y + g.TILE_SIZE / 2), g.SCREEN_WIDTH, @intFromFloat(y + g.TILE_SIZE / 2), GRID_COLOR);
+            y += g.TILE_SIZE;
         }
 
-        const mouse_pos = rl.GetMousePosition();
+        traverse(&alloc, nodes.items, &tileset);
+
+        const mouse_pos = snapToGrid(rl.GetMousePosition());
 
         for (nodes.items) |*node1| {
             if (!node1.active) continue;
@@ -158,14 +193,14 @@ pub fn main() !void {
                     rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, INACTIVE_COLOR);
                 }
             }
-            rl.DrawCircleV(node1.pos, 20, INACTIVE_COLOR);
+            rl.DrawCircleV(node1.pos, 10, INACTIVE_COLOR);
         }
 
         switch (editor.state) {
             .idle => {},
             .eraser => {
                 if (hoveredNode(mouse_pos, nodes.items)) |node1| {
-                    rl.DrawCircleV(node1.pos, 20, ACTIVE_COLOR);
+                    rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
                     if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
                         node1.active = false;
                         for (nodes.items) |*node| {
@@ -204,23 +239,22 @@ pub fn main() !void {
                         found = true;
                     }
 
-                    const snapped_pos = snapToGrid(mouse_pos);
                     rl.DrawLineEx(
                         nodes.items[node_id].pos,
-                        snapped_pos,
+                        mouse_pos,
                         LINE_THICKNESS,
-                        if (isValidEdge(nodes.items[node_id].pos, snapped_pos)) ACTIVE_COLOR else BAD_COLOR,
+                        if (isValidEdge(nodes.items[node_id].pos, mouse_pos)) ACTIVE_COLOR else BAD_COLOR,
                     );
 
                     if (found) {
-                        rl.DrawCircleV(new_node.pos, 20, ACTIVE_COLOR);
+                        rl.DrawCircleV(new_node.pos, 10, ACTIVE_COLOR);
                     } else {
-                        rl.DrawCircleV(snapped_pos, 20, ACTIVE_COLOR);
+                        rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                     }
 
-                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(nodes.items[node_id].pos, snapped_pos)) {
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(nodes.items[node_id].pos, mouse_pos)) {
                         if (!found) {
-                            try nodes.append(Node.init(&alloc, snapped_pos, nodes.items.len));
+                            try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
                             new_node = &nodes.items[nodes.items.len - 1];
                         }
                         try new_node.edges.put(node_id, {});
@@ -228,42 +262,16 @@ pub fn main() !void {
                         editor.active_node_id = new_node.id;
                     }
                 } else if (hoveredNode(mouse_pos, nodes.items)) |node1| {
-                    rl.DrawCircleV(node1.pos, 20, ACTIVE_COLOR);
+                    rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                         editor.active_node_id = node1.id;
                     }
                 } else {
-                    const snapped_pos = snapToGrid(mouse_pos);
-                    rl.DrawCircleV(snapped_pos, 20, ACTIVE_COLOR);
+                    rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                        const new_node = Node.init(&alloc, snapped_pos, nodes.items.len);
+                        const new_node = Node.init(&alloc, mouse_pos, nodes.items.len);
                         try nodes.append(new_node);
                         editor.active_node_id = new_node.id;
-                    }
-                }
-            },
-            .add_node_multi => {
-                const snapped_pos = snapToGrid(mouse_pos);
-                for (nodes.items) |*node| {
-                    if (!node.active) continue;
-                    if (rl.Vector2Distance(node.pos, snapped_pos) < RANGE) {
-                        if (!isValidEdge(node.pos, snapped_pos)) continue;
-                        rl.DrawLineEx(node.pos, snapped_pos, LINE_THICKNESS, ACTIVE_COLOR);
-                    }
-                }
-
-                rl.DrawCircleV(snapped_pos, 20, ACTIVE_COLOR);
-                rl.DrawCircleLinesV(snapped_pos, RANGE, ACTIVE_COLOR);
-
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    try nodes.append(Node.init(&alloc, snapped_pos, nodes.items.len));
-                    const new_node = &nodes.items[nodes.items.len - 1];
-                    for (nodes.items) |*node| {
-                        if (!node.active or node.id == new_node.id) continue;
-                        if (rl.Vector2Distance(node.pos, snapped_pos) < RANGE) {
-                            try new_node.edges.put(node.id, {});
-                            try nodes.items[node.id].edges.put(new_node.id, {});
-                        }
                     }
                 }
             },

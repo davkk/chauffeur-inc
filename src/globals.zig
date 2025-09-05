@@ -2,7 +2,7 @@ const math = @import("std").math;
 
 pub const TILE_SIZE = 64;
 
-pub const SCREEN_WIDTH = 1600;
+pub const SCREEN_WIDTH = 1920;
 pub const SCREEN_HEIGHT = 1200;
 
 pub const SCALE: i32 = 2;
