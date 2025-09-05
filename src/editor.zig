@@ -170,27 +170,57 @@ pub fn main() !void {
 
         rl.ClearBackground(rl.BLACK);
 
-        var x: f32 = 0;
-        while (x <= g.SCREEN_WIDTH) {
-            rl.DrawLine(@intFromFloat(x + g.TILE_SIZE / 2), 0, @intFromFloat(x + g.TILE_SIZE / 2), g.SCREEN_HEIGHT, GRID_COLOR);
-            x += g.TILE_SIZE;
+        var grid_x: f32 = 0;
+        while (grid_x <= g.SCREEN_WIDTH) {
+            rl.DrawLine(@intFromFloat(grid_x + g.TILE_SIZE / 2), 0, @intFromFloat(grid_x + g.TILE_SIZE / 2), g.SCREEN_HEIGHT, GRID_COLOR);
+            grid_x += g.TILE_SIZE;
         }
-        var y: f32 = 0;
-        while (y <= g.SCREEN_HEIGHT) {
-            rl.DrawLine(0, @intFromFloat(y + g.TILE_SIZE / 2), g.SCREEN_WIDTH, @intFromFloat(y + g.TILE_SIZE / 2), GRID_COLOR);
-            y += g.TILE_SIZE;
+        var grid_y: f32 = 0;
+        while (grid_y <= g.SCREEN_HEIGHT) {
+            rl.DrawLine(0, @intFromFloat(grid_y + g.TILE_SIZE / 2), g.SCREEN_WIDTH, @intFromFloat(grid_y + g.TILE_SIZE / 2), GRID_COLOR);
+            grid_y += g.TILE_SIZE;
         }
-
-        traverse(&alloc, nodes.items, &tileset);
 
         const mouse_pos = snapToGrid(rl.GetMousePosition());
 
         for (nodes.items) |*node1| {
             if (!node1.active) continue;
-            for (nodes.items) |*node2| {
+            for (node1.edges.keys()) |edge| {
+                const node2 = &nodes.items[edge];
                 if (!node2.active or node1.id > node2.id) continue;
-                if (node1.edges.get(node2.id)) |_| {
-                    rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, INACTIVE_COLOR);
+
+                const x1: usize = @intFromFloat(node1.pos.x);
+                const x2: usize = @intFromFloat(node2.pos.x);
+                const y1: usize = @intFromFloat(node1.pos.y);
+                const y2: usize = @intFromFloat(node2.pos.y);
+
+                const dx = @abs(node2.pos.x - node1.pos.x);
+                const dy = @abs(node2.pos.y - node1.pos.y);
+
+                if (dx < 1e-5) {
+                    var y_pos = @min(y1, y2);
+                    while (y_pos <= @max(y1, y2)) : (y_pos += g.TILE_SIZE) {
+                        rl.DrawTexturePro(
+                            tileset.texture,
+                            rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                            rl.Rectangle{ .x = @floatFromInt(x1), .y = @floatFromInt(y_pos), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                            rl.Vector2{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                            0,
+                            rl.WHITE,
+                        );
+                    }
+                } else if (dy < 1e-5) {
+                    var x_pos = @min(x1, x2);
+                    while (x_pos <= @max(x1, x2)) : (x_pos += g.TILE_SIZE) {
+                        rl.DrawTexturePro(
+                            tileset.texture,
+                            rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                            rl.Rectangle{ .x = @floatFromInt(x_pos), .y = @floatFromInt(y1), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                            rl.Vector2{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                            90,
+                            rl.WHITE,
+                        );
+                    }
                 }
             }
             rl.DrawCircleV(node1.pos, 10, INACTIVE_COLOR);
