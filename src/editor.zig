@@ -122,12 +122,12 @@ fn traverse(alloc: *const std.mem.Allocator, adj_list: []Node, tileset: *const T
     }
 }
 
-fn drawRoad(tileset: *const Tileset, x: i32, y: i32, angle: f32) void {
+fn drawRoad(texture: rl.Texture2D, x: i32, y: i32, angle: f32) void {
     rl.DrawTexturePro(
-        tileset.texture,
-        .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE * @sqrt(2.0) },
-        .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = g.TILE_SIZE, .height = g.TILE_SIZE * @sqrt(2.0) },
-        .{ .x = g.TILE_SIZE / 2.0, .y = g.TILE_SIZE * @sqrt(2.0) / 2.0 },
+        texture,
+        .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+        .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+        .{ .x = g.TILE_SIZE / 2.0, .y = g.TILE_SIZE / 2.0 },
         angle,
         rl.WHITE,
     );
@@ -140,6 +140,12 @@ pub fn main() !void {
 
     const tileset = Tileset.init();
     defer tileset.deinit();
+
+    var road = rl.LoadImageFromTexture(tileset.texture);
+    rl.ImageCrop(&road, .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE });
+    const road_texture = rl.LoadTextureFromImage(road);
+    defer rl.UnloadTexture(road_texture);
+    rl.SetTextureWrap(road_texture, rl.TEXTURE_WRAP_REPEAT);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -158,7 +164,26 @@ pub fn main() !void {
         .active_node_id = null,
     };
 
+    var camera = rl.Camera2D{
+        .target = rl.Vector2{ .x = 0, .y = 0 },
+        .offset = rl.Vector2{ .x = g.SCREEN_WIDTH / 2.0, .y = g.SCREEN_HEIGHT / 2.0 },
+        .rotation = 0,
+        .zoom = 1.0,
+    };
+
     while (!rl.WindowShouldClose()) {
+        const wheel = rl.GetMouseWheelMove();
+        if (wheel != 0) {
+            camera.zoom += wheel * 0.1;
+            if (camera.zoom < 0.1) camera.zoom = 0.1;
+            if (camera.zoom > 5.0) camera.zoom = 5.0;
+        }
+        if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_MIDDLE)) {
+            const delta = rl.GetMouseDelta();
+            camera.target.x -= delta.x / camera.zoom;
+            camera.target.y -= delta.y / camera.zoom;
+        }
+
         // const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
         if (rl.IsKeyPressed(rl.KEY_P)) {
             for (nodes.items) |*node| {
@@ -182,20 +207,27 @@ pub fn main() !void {
 
         rl.ClearBackground(rl.BLACK);
 
+        rl.BeginMode2D(camera);
+        defer rl.EndMode2D();
+
         if (editor.state != .idle) {
-            var grid_x: f32 = 0;
-            while (grid_x <= g.SCREEN_WIDTH) {
-                rl.DrawLine(@intFromFloat(grid_x), 0, @intFromFloat(grid_x), g.SCREEN_HEIGHT, GRID_COLOR);
-                grid_x += g.TILE_SIZE;
+            const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
+            const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
+            const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
+            const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
+
+            var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE;
+            while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
+                rl.DrawLine(@intFromFloat(grid_x), @intFromFloat(world_min_y), @intFromFloat(grid_x), @intFromFloat(world_max_y), GRID_COLOR);
             }
-            var grid_y: f32 = 0;
-            while (grid_y <= g.SCREEN_HEIGHT) {
-                rl.DrawLine(0, @intFromFloat(grid_y), g.SCREEN_WIDTH, @intFromFloat(grid_y), GRID_COLOR);
-                grid_y += g.TILE_SIZE;
+            var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE;
+            while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
+                rl.DrawLine(@intFromFloat(world_min_x), @intFromFloat(grid_y), @intFromFloat(world_max_x), @intFromFloat(grid_y), GRID_COLOR);
             }
         }
 
-        const mouse_pos = snapToGrid(rl.GetMousePosition());
+        const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera);
+        const mouse_pos = snapToGrid(mouse_world_pos);
 
         for (nodes.items) |*node1| {
             if (!node1.active) continue;
@@ -203,40 +235,26 @@ pub fn main() !void {
                 const node2 = &nodes.items[edge];
                 if (!node2.active or node1.id > node2.id) continue;
 
-                const x1: i32 = @intFromFloat(node1.pos.x);
-                const x2: i32 = @intFromFloat(node2.pos.x);
-                const y1: i32 = @intFromFloat(node1.pos.y);
-                const y2: i32 = @intFromFloat(node2.pos.y);
+                const dx = @round(node2.pos.x - node1.pos.x);
+                const dy = @round(node2.pos.y - node1.pos.y);
+                const length = @sqrt(dx * dx + dy * dy);
 
-                const dx: i32 = @intFromFloat(node2.pos.x - node1.pos.x);
-                const dy: i32 = @intFromFloat(node2.pos.y - node1.pos.y);
+                const angle = if (dx == 0) 0 else if (dy == 0) -90 else -math.atan2(dy, dx) * 180.0 / math.pi;
 
-                if (dx == 0) {
-                    const min_y = @min(y1, y2);
-                    const max_y = @max(y1, y2);
-                    var y_pos = min_y + g.TILE_SIZE;
-                    while (y_pos < max_y) : (y_pos += g.TILE_SIZE) {
-                        drawRoad(&tileset, x1, y_pos, 0);
-                    }
-                } else if (dy == 0) {
-                    const min_x = @min(x1, x2);
-                    const max_x = @max(x1, x2);
-                    var x_pos = min_x + g.TILE_SIZE;
-                    while (x_pos < max_x) : (x_pos += g.TILE_SIZE) {
-                        drawRoad(&tileset, x_pos, y1, 90);
-                    }
-                } else {
-                    const angle: f32 = if (dx * dy > 0) -45.0 else 45.0;
-                    const steps = @divExact(@abs(dx), g.TILE_SIZE);
-                    var step: i32 = 1;
-                    while (step < steps) : (step += 1) {
-                        const x_pos = x1 + math.sign(dx) * g.TILE_SIZE * step;
-                        const y_pos = y1 + math.sign(dy) * g.TILE_SIZE * step;
-                        drawRoad(&tileset, x_pos, y_pos, angle);
-                    }
-                }
+                const mid_x = (node1.pos.x + node2.pos.x) / 2.0;
+                const mid_y = (node1.pos.y + node2.pos.y) / 2.0;
+
+                rl.DrawTexturePro(
+                    road_texture,
+                    .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = length },
+                    .{ .x = mid_x, .y = mid_y, .width = g.TILE_SIZE, .height = length },
+                    .{ .x = g.TILE_SIZE / 2.0, .y = length / 2 },
+                    angle,
+                    rl.WHITE,
+                );
             }
 
+            // TODO: draw node connections
             if (editor.state != .idle) {
                 rl.DrawCircleV(node1.pos, 10, INACTIVE_COLOR);
             }
