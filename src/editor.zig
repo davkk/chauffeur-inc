@@ -1,4 +1,5 @@
 const std = @import("std");
+const math = std.math;
 const json = std.json;
 
 const rl = @import("raylib.zig").rl;
@@ -104,7 +105,7 @@ fn traverse(alloc: *const std.mem.Allocator, adj_list: []Node, tileset: *const T
             tileset.texture,
             rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
             rl.Rectangle{ .x = node.pos.x, .y = node.pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-            rl.Vector2{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+            rl.Vector2{ .x = g.TILE_SIZE / 2.0, .y = g.TILE_SIZE / 2.0 },
             0,
             rl.WHITE,
         );
@@ -119,6 +120,17 @@ fn traverse(alloc: *const std.mem.Allocator, adj_list: []Node, tileset: *const T
             visited.put(edge, {}) catch unreachable;
         }
     }
+}
+
+fn drawRoad(tileset: *const Tileset, x: i32, y: i32, angle: f32) void {
+    rl.DrawTexturePro(
+        tileset.texture,
+        .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE * @sqrt(2.0) },
+        .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = g.TILE_SIZE, .height = g.TILE_SIZE * @sqrt(2.0) },
+        .{ .x = g.TILE_SIZE / 2.0, .y = g.TILE_SIZE * @sqrt(2.0) / 2.0 },
+        angle,
+        rl.WHITE,
+    );
 }
 
 pub fn main() !void {
@@ -170,15 +182,17 @@ pub fn main() !void {
 
         rl.ClearBackground(rl.BLACK);
 
-        var grid_x: f32 = 0;
-        while (grid_x <= g.SCREEN_WIDTH) {
-            rl.DrawLine(@intFromFloat(grid_x + g.TILE_SIZE / 2), 0, @intFromFloat(grid_x + g.TILE_SIZE / 2), g.SCREEN_HEIGHT, GRID_COLOR);
-            grid_x += g.TILE_SIZE;
-        }
-        var grid_y: f32 = 0;
-        while (grid_y <= g.SCREEN_HEIGHT) {
-            rl.DrawLine(0, @intFromFloat(grid_y + g.TILE_SIZE / 2), g.SCREEN_WIDTH, @intFromFloat(grid_y + g.TILE_SIZE / 2), GRID_COLOR);
-            grid_y += g.TILE_SIZE;
+        if (editor.state != .idle) {
+            var grid_x: f32 = 0;
+            while (grid_x <= g.SCREEN_WIDTH) {
+                rl.DrawLine(@intFromFloat(grid_x), 0, @intFromFloat(grid_x), g.SCREEN_HEIGHT, GRID_COLOR);
+                grid_x += g.TILE_SIZE;
+            }
+            var grid_y: f32 = 0;
+            while (grid_y <= g.SCREEN_HEIGHT) {
+                rl.DrawLine(0, @intFromFloat(grid_y), g.SCREEN_WIDTH, @intFromFloat(grid_y), GRID_COLOR);
+                grid_y += g.TILE_SIZE;
+            }
         }
 
         const mouse_pos = snapToGrid(rl.GetMousePosition());
@@ -189,41 +203,43 @@ pub fn main() !void {
                 const node2 = &nodes.items[edge];
                 if (!node2.active or node1.id > node2.id) continue;
 
-                const x1: usize = @intFromFloat(node1.pos.x);
-                const x2: usize = @intFromFloat(node2.pos.x);
-                const y1: usize = @intFromFloat(node1.pos.y);
-                const y2: usize = @intFromFloat(node2.pos.y);
+                const x1: i32 = @intFromFloat(node1.pos.x);
+                const x2: i32 = @intFromFloat(node2.pos.x);
+                const y1: i32 = @intFromFloat(node1.pos.y);
+                const y2: i32 = @intFromFloat(node2.pos.y);
 
-                const dx = @abs(node2.pos.x - node1.pos.x);
-                const dy = @abs(node2.pos.y - node1.pos.y);
+                const dx: i32 = @intFromFloat(node2.pos.x - node1.pos.x);
+                const dy: i32 = @intFromFloat(node2.pos.y - node1.pos.y);
 
-                if (dx < 1e-5) {
-                    var y_pos = @min(y1, y2);
-                    while (y_pos <= @max(y1, y2)) : (y_pos += g.TILE_SIZE) {
-                        rl.DrawTexturePro(
-                            tileset.texture,
-                            rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                            rl.Rectangle{ .x = @floatFromInt(x1), .y = @floatFromInt(y_pos), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                            rl.Vector2{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                            0,
-                            rl.WHITE,
-                        );
+                if (dx == 0) {
+                    const min_y = @min(y1, y2);
+                    const max_y = @max(y1, y2);
+                    var y_pos = min_y + g.TILE_SIZE;
+                    while (y_pos < max_y) : (y_pos += g.TILE_SIZE) {
+                        drawRoad(&tileset, x1, y_pos, 0);
                     }
-                } else if (dy < 1e-5) {
-                    var x_pos = @min(x1, x2);
-                    while (x_pos <= @max(x1, x2)) : (x_pos += g.TILE_SIZE) {
-                        rl.DrawTexturePro(
-                            tileset.texture,
-                            rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                            rl.Rectangle{ .x = @floatFromInt(x_pos), .y = @floatFromInt(y1), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                            rl.Vector2{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                            90,
-                            rl.WHITE,
-                        );
+                } else if (dy == 0) {
+                    const min_x = @min(x1, x2);
+                    const max_x = @max(x1, x2);
+                    var x_pos = min_x + g.TILE_SIZE;
+                    while (x_pos < max_x) : (x_pos += g.TILE_SIZE) {
+                        drawRoad(&tileset, x_pos, y1, 90);
+                    }
+                } else {
+                    const angle: f32 = if (dx * dy > 0) -45.0 else 45.0;
+                    const steps = @divExact(@abs(dx), g.TILE_SIZE);
+                    var step: i32 = 1;
+                    while (step < steps) : (step += 1) {
+                        const x_pos = x1 + math.sign(dx) * g.TILE_SIZE * step;
+                        const y_pos = y1 + math.sign(dy) * g.TILE_SIZE * step;
+                        drawRoad(&tileset, x_pos, y_pos, angle);
                     }
                 }
             }
-            rl.DrawCircleV(node1.pos, 10, INACTIVE_COLOR);
+
+            if (editor.state != .idle) {
+                rl.DrawCircleV(node1.pos, 10, INACTIVE_COLOR);
+            }
         }
 
         switch (editor.state) {
