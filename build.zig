@@ -56,6 +56,7 @@ pub fn build(b: *std.Build) !void {
         .root_module = editor_mod,
     });
     editor_exe.linkLibrary(raylib);
+    editor_exe.step.dependOn(&export_tileset_cmd.step);
     b.installArtifact(editor_exe);
 
     const run_game = b.addRunArtifact(game_exe);

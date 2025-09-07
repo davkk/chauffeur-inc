@@ -133,6 +133,35 @@ fn drawRoad(texture: rl.Texture2D, x: i32, y: i32, angle: f32) void {
     );
 }
 
+fn drawNode(node: *Node, nodes: []Node, tileset: *const Tileset) void {
+    rl.DrawTexturePro(
+        tileset.texture,
+        .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
+        .{ .x = node.pos.x, .y = node.pos.y, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
+        .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+        0,
+        rl.WHITE,
+    );
+
+    for (node.edges.keys()) |edge| {
+        const other = &nodes[edge];
+        if (!other.active) continue;
+
+        const dx = @round(node.pos.x - other.pos.x);
+        const dy = @round(node.pos.y - other.pos.y);
+        const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+
+        rl.DrawTexturePro(
+            tileset.texture,
+            .{ .x = g.TILE_SIZE * 3, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+            .{ .x = node.pos.x, .y = node.pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+            .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+            angle,
+            rl.WHITE,
+        );
+    }
+}
+
 pub fn main() !void {
     rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc - Map Editor");
     rl.SetTargetFPS(g.TARGET_FPS);
@@ -218,11 +247,15 @@ pub fn main() !void {
 
             var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE;
             while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
-                rl.DrawLine(@intFromFloat(grid_x), @intFromFloat(world_min_y), @intFromFloat(grid_x), @intFromFloat(world_max_y), GRID_COLOR);
+                const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
+                const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
+                rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
             }
             var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE;
             while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
-                rl.DrawLine(@intFromFloat(world_min_x), @intFromFloat(grid_y), @intFromFloat(world_max_x), @intFromFloat(grid_y), GRID_COLOR);
+                const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
+                const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
+                rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
             }
         }
 
@@ -235,14 +268,14 @@ pub fn main() !void {
                 const node2 = &nodes.items[edge];
                 if (!node2.active or node1.id > node2.id) continue;
 
-                const dx = @round(node2.pos.x - node1.pos.x);
-                const dy = @round(node2.pos.y - node1.pos.y);
-                const length = @sqrt(dx * dx + dy * dy);
+                const dx = @round(node1.pos.x - node2.pos.x);
+                const dy = @round(node1.pos.y - node2.pos.y);
 
-                const angle = if (dx == 0) 0 else if (dy == 0) -90 else -math.atan2(dy, dx) * 180.0 / math.pi;
+                const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
 
                 const mid_x = (node1.pos.x + node2.pos.x) / 2.0;
                 const mid_y = (node1.pos.y + node2.pos.y) / 2.0;
+                const length = @sqrt(dx * dx + dy * dy);
 
                 rl.DrawTexturePro(
                     road_texture,
@@ -254,9 +287,40 @@ pub fn main() !void {
                 );
             }
 
-            // TODO: draw node connections
-            if (editor.state != .idle) {
-                rl.DrawCircleV(node1.pos, 10, INACTIVE_COLOR);
+            for (node1.edges.keys()) |edge| {
+                const node2 = &nodes.items[edge];
+                if (!node2.active) continue;
+
+                const dx = @round(node1.pos.x - node2.pos.x);
+                const dy = @round(node1.pos.y - node2.pos.y);
+                const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+
+                rl.DrawTexturePro(
+                    tileset.texture,
+                    .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
+                    .{ .x = node1.pos.x, .y = node1.pos.y, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
+                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                    angle,
+                    rl.WHITE,
+                );
+            }
+
+            for (node1.edges.keys()) |edge| {
+                const node2 = &nodes.items[edge];
+                if (!node2.active) continue;
+
+                const dx = @round(node1.pos.x - node2.pos.x);
+                const dy = @round(node1.pos.y - node2.pos.y);
+                const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+
+                rl.DrawTexturePro(
+                    tileset.texture,
+                    .{ .x = g.TILE_SIZE * 3, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                    .{ .x = node1.pos.x, .y = node1.pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                    angle,
+                    rl.WHITE,
+                );
             }
         }
 
