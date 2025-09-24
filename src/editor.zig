@@ -81,46 +81,62 @@ fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
     return dx == 0 or dy == 0 or @abs(dx) == @abs(dy);
 }
 
-const Queue = std.DoublyLinkedList(usize);
-
-fn traverse(alloc: *const std.mem.Allocator, adj_list: []Node, tileset: *const Tileset) void {
-    var visited = std.AutoArrayHashMap(usize, void).init(alloc.*);
-    defer visited.deinit();
-
-    var queue = Queue{};
-    for (adj_list) |node| {
-        if (node.active) {
-            var first = Queue.Node{ .data = node.id };
-            queue.append(&first);
-            visited.put(node.id, {}) catch unreachable;
-            break;
-        }
-    }
-
-    while (queue.len > 0) {
-        const node_id = queue.popFirst().?;
-        const node = &adj_list[node_id.data];
-
-        rl.DrawTexturePro(
-            tileset.texture,
-            rl.Rectangle{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-            rl.Rectangle{ .x = node.pos.x, .y = node.pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-            rl.Vector2{ .x = g.TILE_SIZE / 2.0, .y = g.TILE_SIZE / 2.0 },
-            0,
-            rl.WHITE,
-        );
-
-        for (node.edges.keys()) |edge| {
-            if (visited.get(edge)) |_| {
-                continue;
-            }
-
-            var new_node = Queue.Node{ .data = edge };
-            queue.append(&new_node);
-            visited.put(edge, {}) catch unreachable;
-        }
-    }
+fn orientation(p: rl.Vector2, q: rl.Vector2, r: rl.Vector2) i32 {
+    const val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+    if (val == 0) return 0;
+    return if (val > 0) 1 else 2;
 }
+
+fn doLinesIntersect(a1: rl.Vector2, a2: rl.Vector2, b1: rl.Vector2, b2: rl.Vector2) bool {
+    if ((a1.x == b1.x and a1.y == b1.y) or (a1.x == b2.x and a1.y == b2.y) or (a2.x == b1.x and a2.y == b1.y) or (a2.x == b2.x and a2.y == b2.y)) {
+        return false;
+    }
+
+    const o1 = orientation(a1, a2, b1);
+    const o2 = orientation(a1, a2, b2);
+    const o3 = orientation(b1, b2, a1);
+    const o4 = orientation(b1, b2, a2);
+
+    return o1 != o2 and o3 != o4;
+}
+
+fn pointOnSegment(p: rl.Vector2, a: rl.Vector2, b: rl.Vector2) bool {
+    const min_x = @min(a.x, b.x);
+    const max_x = @max(a.x, b.x);
+    const min_y = @min(a.y, b.y);
+    const max_y = @max(a.y, b.y);
+    if (p.x < min_x or p.x > max_x or p.y < min_y or p.y > max_y) return false;
+    const dx_ab = b.x - a.x;
+    const dy_ab = b.y - a.y;
+    const dx_ap = p.x - a.x;
+    const dy_ap = p.y - a.y;
+    if (dx_ab == 0) {
+        return dx_ap == 0;
+    } else if (dy_ab == 0) {
+        return dy_ap == 0;
+    } else if (@abs(dx_ab) == @abs(dy_ab)) {
+        return @abs(dx_ap) == @abs(dy_ap) and (dx_ap * dy_ab == dy_ap * dx_ab);
+    }
+    return false;
+}
+
+fn intersectsAny(nodes: []Node, start_id: usize, end_pos: rl.Vector2) bool {
+    const start_pos = nodes[start_id].pos;
+    for (nodes) |*node1| {
+        if (!node1.active) continue;
+        for (node1.edges.keys()) |edge_id| {
+            const node2 = &nodes[edge_id];
+            if (!node2.active) continue;
+            if (pointOnSegment(end_pos, node1.pos, node2.pos)) continue;
+            if (doLinesIntersect(start_pos, end_pos, node1.pos, node2.pos)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+const Queue = std.DoublyLinkedList(usize);
 
 fn drawRoad(texture: rl.Texture2D, x: i32, y: i32, angle: f32) void {
     rl.DrawTexturePro(
@@ -134,22 +150,13 @@ fn drawRoad(texture: rl.Texture2D, x: i32, y: i32, angle: f32) void {
 }
 
 fn drawNode(node: *Node, nodes: []Node, tileset: *const Tileset) void {
-    rl.DrawTexturePro(
-        tileset.texture,
-        .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
-        .{ .x = node.pos.x, .y = node.pos.y, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
-        .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
-        0,
-        rl.WHITE,
-    );
-
     for (node.edges.keys()) |edge| {
         const other = &nodes[edge];
         if (!other.active) continue;
 
         const dx = @round(node.pos.x - other.pos.x);
-        const dy = @round(node.pos.y - other.pos.y);
-        const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+        const dy = @round(other.pos.y - node.pos.y);
+        const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
 
         rl.DrawTexturePro(
             tileset.texture,
@@ -264,14 +271,16 @@ pub fn main() !void {
 
         for (nodes.items) |*node1| {
             if (!node1.active) continue;
+
+            // draw roads
             for (node1.edges.keys()) |edge| {
                 const node2 = &nodes.items[edge];
                 if (!node2.active or node1.id > node2.id) continue;
 
                 const dx = @round(node1.pos.x - node2.pos.x);
-                const dy = @round(node1.pos.y - node2.pos.y);
+                const dy = @round(node2.pos.y - node1.pos.y);
 
-                const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+                const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
 
                 const mid_x = (node1.pos.x + node2.pos.x) / 2.0;
                 const mid_y = (node1.pos.y + node2.pos.y) / 2.0;
@@ -287,13 +296,14 @@ pub fn main() !void {
                 );
             }
 
+            // draw nodes
             for (node1.edges.keys()) |edge| {
                 const node2 = &nodes.items[edge];
                 if (!node2.active) continue;
 
                 const dx = @round(node1.pos.x - node2.pos.x);
-                const dy = @round(node1.pos.y - node2.pos.y);
-                const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+                const dy = @round(node2.pos.y - node1.pos.y);
+                const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
 
                 rl.DrawTexturePro(
                     tileset.texture,
@@ -305,13 +315,14 @@ pub fn main() !void {
                 );
             }
 
+            // draw lines
             for (node1.edges.keys()) |edge| {
                 const node2 = &nodes.items[edge];
                 if (!node2.active) continue;
 
                 const dx = @round(node1.pos.x - node2.pos.x);
-                const dy = @round(node1.pos.y - node2.pos.y);
-                const angle = -math.atan2(-dy, dx) * 180.0 / math.pi - 90;
+                const dy = @round(node2.pos.y - node1.pos.y);
+                const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
 
                 rl.DrawTexturePro(
                     tileset.texture,
@@ -367,11 +378,13 @@ pub fn main() !void {
                         found = true;
                     }
 
+                    const target_pos = if (found) new_node.pos else mouse_pos;
+
                     rl.DrawLineEx(
                         nodes.items[node_id].pos,
-                        mouse_pos,
+                        target_pos,
                         LINE_THICKNESS,
-                        if (isValidEdge(nodes.items[node_id].pos, mouse_pos)) ACTIVE_COLOR else BAD_COLOR,
+                        if (isValidEdge(nodes.items[node_id].pos, target_pos) and !intersectsAny(nodes.items, node_id, target_pos)) ACTIVE_COLOR else BAD_COLOR,
                     );
 
                     if (found) {
@@ -380,10 +393,21 @@ pub fn main() !void {
                         rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                     }
 
-                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(nodes.items[node_id].pos, mouse_pos)) {
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(nodes.items[node_id].pos, target_pos) and !intersectsAny(nodes.items, node_id, target_pos)) {
                         if (!found) {
                             try nodes.append(Node.init(&alloc, mouse_pos, nodes.items.len));
                             new_node = &nodes.items[nodes.items.len - 1];
+                            // Check if mouse_pos is on an existing edge and split it
+                            if (hoveredEdge(mouse_pos, nodes.items)) |split_edge| {
+                                const node_a = split_edge[0];
+                                const node_b = split_edge[1];
+                                _ = node_a.edges.swapRemove(node_b.id);
+                                _ = node_b.edges.swapRemove(node_a.id);
+                                try node_a.edges.put(new_node.id, {});
+                                try node_b.edges.put(new_node.id, {});
+                                try new_node.edges.put(node_a.id, {});
+                                try new_node.edges.put(node_b.id, {});
+                            }
                         }
                         try new_node.edges.put(node_id, {});
                         try nodes.items[node_id].edges.put(new_node.id, {});
@@ -399,7 +423,19 @@ pub fn main() !void {
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                         const new_node = Node.init(&alloc, mouse_pos, nodes.items.len);
                         try nodes.append(new_node);
-                        editor.active_node_id = new_node.id;
+                        const new_node_ptr = &nodes.items[nodes.items.len - 1];
+                        // Check if mouse_pos is on an existing edge and split it
+                        if (hoveredEdge(mouse_pos, nodes.items)) |split_edge| {
+                            const node_a = split_edge[0];
+                            const node_b = split_edge[1];
+                            _ = node_a.edges.swapRemove(node_b.id);
+                            _ = node_b.edges.swapRemove(node_a.id);
+                            try node_a.edges.put(new_node_ptr.id, {});
+                            try node_b.edges.put(new_node_ptr.id, {});
+                            try new_node_ptr.edges.put(node_a.id, {});
+                            try new_node_ptr.edges.put(node_b.id, {});
+                        }
+                        editor.active_node_id = new_node_ptr.id;
                     }
                 }
             },
