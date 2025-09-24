@@ -221,6 +221,7 @@ pub fn main() !void {
         }
 
         // const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
+        const KEY_CTRL = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
         if (rl.IsKeyPressed(rl.KEY_P)) {
             for (nodes.items) |*node| {
                 if (!node.active) continue;
@@ -236,6 +237,24 @@ pub fn main() !void {
             editor.state = .eraser;
         } else if (rl.IsKeyPressed(rl.KEY_A)) {
             editor.state = .add_node_single;
+        } else if (KEY_CTRL and rl.IsKeyPressed(rl.KEY_S)) {
+            const file = try std.fs.cwd().createFile("src/assets/map.dat", .{});
+            defer file.close();
+
+            var buffered_writer = std.io.bufferedWriter(file.writer());
+            var writer = buffered_writer.writer();
+
+            for (nodes.items) |node| {
+                try writer.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
+                for (node.edges.keys()) |edge| {
+                    try writer.print(" {d}", .{edge});
+                }
+                try writer.print("\n", .{});
+            }
+
+            buffered_writer.flush() catch {
+                std.debug.print("Error flushing buffered writer", .{});
+            };
         }
 
         rl.BeginDrawing();

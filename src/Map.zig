@@ -1,175 +1,152 @@
 const std = @import("std");
-const json = std.json;
 const math = std.math;
 
-const Collidable = @import("Collidable.zig");
-const g = @import("globals.zig");
 const rl = @import("raylib.zig").rl;
+const g = @import("globals.zig");
+
 const Tileset = @import("Tileset.zig");
+
+pub const Node = struct {
+    pos: rl.Vector2,
+    id: usize,
+    active: bool = true,
+    edges: std.AutoArrayHashMap(usize, void),
+
+    pub fn init(alloc: *const std.mem.Allocator, pos: rl.Vector2, id: usize) Node {
+        return Node{
+            .active = true,
+            .pos = pos,
+            .id = id,
+            .edges = std.AutoArrayHashMap(usize, void).init(alloc.*),
+        };
+    }
+};
 
 const Self = @This();
 
-const FLIP_HORI: u32 = 0x80000000;
-const FLIP_VERT: u32 = 0x40000000;
-const FLIP_DIAG: u32 = 0x20000000;
+road_texture: rl.Texture2D,
+tileset: Tileset,
 
-pub const LayerId = enum(usize) {
-    BACKGROUND = 0,
-    FOREGROUND,
-    BUILDINGS,
-    COLLIDABLES,
-    NUM_LAYERS,
-};
-
-const Layer = struct {
-    id: LayerId,
-    data: std.ArrayList(u32),
-    cols: usize,
-    rows: usize,
-
-    pub fn init(alloc: std.mem.Allocator, layer_id: usize, data: []json.Value, cols: i64, rows: i64) !Layer {
-        var tiles = try std.ArrayList(u32).initCapacity(alloc, data.len);
-        for (0..data.len) |idx| {
-            try tiles.append(@intCast(data[idx].integer));
-        }
-        return .{
-            .id = @enumFromInt(layer_id),
-            .data = tiles,
-            .cols = @intCast(cols),
-            .rows = @intCast(rows),
-        };
-    }
-
-    pub fn draw(self: Layer, tileset: Tileset) void {
-        for (0..self.rows) |y| {
-            for (0..self.cols) |x| {
-                var tile_id = self.data.items[y * self.cols + x];
-                if (tile_id == 0) continue;
-
-                var angle: f32 = 0;
-                switch (tile_id & 0xFF000000) {
-                    FLIP_DIAG | FLIP_VERT => angle = -math.pi / 2.0,
-                    FLIP_HORI | FLIP_VERT => angle = -math.pi,
-                    FLIP_DIAG | FLIP_HORI => angle = -3.0 * math.pi / 2.0,
-                    else => {},
-                }
-
-                tile_id &= ~(FLIP_HORI | FLIP_VERT | FLIP_DIAG);
-                tile_id -= 1; // subtract firstgid
-
-                rl.DrawTexturePro(
-                    tileset.texture,
-                    .{
-                        .x = @floatFromInt(tile_id % tileset.cols * g.TILE_SIZE),
-                        .y = @floatFromInt(tile_id / tileset.rows * g.TILE_SIZE),
-                        .width = @floatFromInt(g.TILE_SIZE),
-                        .height = @floatFromInt(g.TILE_SIZE),
-                    },
-                    .{
-                        .x = @floatFromInt(g.SCALE * (x * g.TILE_SIZE + g.TILE_SIZE / 2)),
-                        .y = @floatFromInt(g.SCALE * (y * g.TILE_SIZE + g.TILE_SIZE / 2)),
-                        .width = @floatFromInt(g.SCALE * g.TILE_SIZE),
-                        .height = @floatFromInt(g.SCALE * g.TILE_SIZE),
-                    },
-                    .{ .x = g.SCALE * g.TILE_SIZE / 2, .y = g.SCALE * g.TILE_SIZE / 2 },
-                    angle * 180 / math.pi,
-                    rl.WHITE,
-                );
-            }
-        }
-    }
-};
-
-fn getNumberFloat(value: json.Value) !f32 {
-    return switch (value) {
-        .integer => |int_val| @floatFromInt(int_val),
-        .float => |float_val| @floatCast(float_val),
-        else => error.NotANumber,
-    };
-}
-
-fn getNumberInt(value: json.Value) !i64 {
-    return switch (value) {
-        .integer => |int_val| @intCast(int_val),
-        .float => |float_val| @intFromFloat(float_val),
-        else => error.NotANumber,
-    };
-}
-
-width: usize,
-height: usize,
-layers: std.ArrayList(Layer),
-collidables: std.ArrayList(Collidable),
+nodes: std.ArrayList(Node),
 
 pub fn init(alloc: std.mem.Allocator) !Self {
-    const map_json = @embedFile("assets/map.json");
+    const tileset = Tileset.init();
 
-    const parsed = try json.parseFromSlice(json.Value, alloc, map_json, .{});
-    defer parsed.deinit();
+    var road = rl.LoadImageFromTexture(tileset.texture);
+    rl.ImageCrop(&road, .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE });
 
-    const root = parsed.value;
-    const width = try getNumberInt(root.object.get("width").?);
-    const height = try getNumberInt(root.object.get("height").?);
+    const road_texture = rl.LoadTextureFromImage(road);
+    rl.SetTextureWrap(road_texture, rl.TEXTURE_WRAP_REPEAT);
 
-    var layers = std.ArrayList(Layer).init(alloc);
-    var collidables = std.ArrayList(Collidable).init(alloc);
+    var nodes = std.ArrayList(Node).init(alloc);
 
-    for (root.object.get("layers").?.array.items, 0..) |layer, idx| {
-        if (std.mem.eql(u8, layer.object.get("type").?.string, "tilelayer")) {
-            try layers.append(
-                try Layer.init(
-                    alloc,
-                    idx,
-                    layer.object.get("data").?.array.items,
-                    layer.object.get("width").?.integer,
-                    layer.object.get("height").?.integer,
-                ),
-            );
-        } else if (std.mem.eql(u8, layer.object.get("type").?.string, "group")) {
-            for (layer.object.get("layers").?.array.items) |item| {
-                try layers.append(
-                    try Layer.init(
-                        alloc,
-                        idx,
-                        item.object.get("data").?.array.items,
-                        item.object.get("width").?.integer,
-                        item.object.get("height").?.integer,
-                    ),
-                );
-            }
-        } else if (std.mem.eql(u8, layer.object.get("type").?.string, "objectgroup")) {
-            for (layer.object.get("objects").?.array.items) |obj| {
-                try collidables.append(
-                    Collidable.init_rect(
-                        g.SCALE * try getNumberFloat(obj.object.get("x").?),
-                        g.SCALE * try getNumberFloat(obj.object.get("y").?),
-                        g.SCALE * try getNumberFloat(obj.object.get("width").?),
-                        g.SCALE * try getNumberFloat(obj.object.get("height").?),
-                    ),
-                );
-            }
+    const file = try std.fs.cwd().openFile("src/assets/map.dat", .{});
+    defer file.close();
+
+    var buffered_reader = std.io.bufferedReader(file.reader());
+    var reader = buffered_reader.reader();
+    var line_buf: [1024]u8 = undefined; // TODO: buffer size?
+
+    while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
+        var iter = std.mem.splitSequence(u8, line, " ");
+        const node_head = iter.next();
+
+        var node_iter = std.mem.splitSequence(u8, node_head.?, ";");
+
+        const id = try std.fmt.parseInt(usize, node_iter.next().?, 10);
+        const x = try std.fmt.parseFloat(f32, node_iter.next().?);
+        const y = try std.fmt.parseFloat(f32, node_iter.next().?);
+
+        try nodes.append(Node.init(&alloc, .{ .x = x, .y = y }, id));
+        const node = &nodes.items[nodes.items.len - 1];
+
+        while (iter.next()) |edge| {
+            const edge_id = try std.fmt.parseInt(usize, std.mem.trim(u8, edge, "\n"), 10);
+            try node.edges.put(edge_id, {});
         }
     }
 
     return .{
-        .width = @intCast(width),
-        .height = @intCast(height),
-        .layers = layers,
-        .collidables = collidables,
+        .tileset = tileset,
+        .road_texture = road_texture,
+        .nodes = nodes,
     };
 }
 
 pub fn deinit(self: *const Self) void {
-    self.layers.deinit();
-    self.collidables.deinit();
+    rl.UnloadTexture(self.road_texture);
+    rl.UnloadTexture(self.tileset.texture);
+
+    for (self.nodes.items) |*node| {
+        node.edges.deinit();
+    }
+    self.nodes.deinit();
 }
 
-pub fn draw_background(self: *const Self, tileset: Tileset) void {
-    self.layers.items[@intFromEnum(LayerId.BACKGROUND)].draw(tileset);
-}
+pub fn draw(self: *Self) void {
+    for (self.nodes.items) |*node1| {
+        if (!node1.active) continue;
 
-pub fn draw_foreground(self: *const Self, tileset: Tileset) void {
-    for (self.layers.items[@intFromEnum(LayerId.FOREGROUND)..]) |layer| {
-        layer.draw(tileset);
+        // draw roads
+        for (node1.edges.keys()) |edge| {
+            const node2 = &self.nodes.items[edge];
+            if (!node2.active or node1.id > node2.id) continue;
+
+            const dx = @round(node1.pos.x - node2.pos.x);
+            const dy = @round(node2.pos.y - node1.pos.y);
+
+            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
+
+            const mid_x = (node1.pos.x + node2.pos.x) / 2.0;
+            const mid_y = (node1.pos.y + node2.pos.y) / 2.0;
+            const length = @sqrt(dx * dx + dy * dy);
+
+            rl.DrawTexturePro(
+                self.road_texture,
+                .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = length },
+                .{ .x = mid_x, .y = mid_y, .width = g.TILE_SIZE, .height = length },
+                .{ .x = g.TILE_SIZE / 2.0, .y = length / 2 },
+                angle,
+                rl.WHITE,
+            );
+        }
+
+        // draw nodes
+        for (node1.edges.keys()) |edge| {
+            const node2 = &self.nodes.items[edge];
+            if (!node2.active) continue;
+
+            const dx = @round(node1.pos.x - node2.pos.x);
+            const dy = @round(node2.pos.y - node1.pos.y);
+            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
+
+            rl.DrawTexturePro(
+                self.tileset.texture,
+                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
+                .{ .x = node1.pos.x, .y = node1.pos.y, .width = g.TILE_SIZE * 2, .height = g.TILE_SIZE * 2 },
+                .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                angle,
+                rl.WHITE,
+            );
+        }
+
+        // draw lines
+        for (node1.edges.keys()) |edge| {
+            const node2 = &self.nodes.items[edge];
+            if (!node2.active) continue;
+
+            const dx = @round(node1.pos.x - node2.pos.x);
+            const dy = @round(node2.pos.y - node1.pos.y);
+            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
+
+            rl.DrawTexturePro(
+                self.tileset.texture,
+                .{ .x = g.TILE_SIZE * 3, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                .{ .x = node1.pos.x, .y = node1.pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                angle,
+                rl.WHITE,
+            );
+        }
     }
 }
