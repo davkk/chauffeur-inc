@@ -46,30 +46,11 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(game_exe);
 
-    const editor_mod = b.createModule(.{
-        .root_source_file = b.path("src/editor.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const editor_exe = b.addExecutable(.{
-        .name = "editor",
-        .root_module = editor_mod,
-    });
-    editor_exe.linkLibrary(raylib);
-    editor_exe.step.dependOn(&export_tileset_cmd.step);
-    b.installArtifact(editor_exe);
-
     const run_game = b.addRunArtifact(game_exe);
     if (b.args) |args| {
         run_game.addArgs(args);
     }
     b.step("run:game", "Run the game").dependOn(&run_game.step);
-
-    const run_editor = b.addRunArtifact(editor_exe);
-    if (b.args) |args| {
-        run_editor.addArgs(args);
-    }
-    b.step("run:editor", "Run the editor").dependOn(&run_editor.step);
 
     // const exe_unit_tests = b.addTest(.{
     //     .root_module = exe_mod,

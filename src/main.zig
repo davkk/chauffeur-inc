@@ -17,7 +17,7 @@ pub fn main() !void {
     rl.SetTargetFPS(g.TARGET_FPS);
     rl.SetExitKey(0);
 
-    var mode = Mode.game;
+    var mode = Mode.editor;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -30,7 +30,7 @@ pub fn main() !void {
         .target = rl.Vector2{ .x = car.pos.x, .y = car.pos.y },
         .offset = rl.Vector2{ .x = g.SCREEN_WIDTH / 2.0, .y = g.SCREEN_HEIGHT / 2.0 },
         .rotation = car.angle,
-        .zoom = 3,
+        .zoom = 1,
     };
 
     var map = try Map.init(alloc);
@@ -74,7 +74,7 @@ pub fn main() !void {
                 rl.DrawText(rl.TextFormat("pos: %.f, %.f", car.pos.x, car.pos.y), 10, 185, 20, rl.WHITE);
             },
             .editor => {
-                try editor.draw(&alloc, &camera, &map);
+                try editor.draw(alloc, &camera, &map);
             },
         }
 

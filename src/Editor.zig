@@ -15,10 +15,10 @@ const ACTIVE_COLOR = rl.WHITE;
 const BAD_COLOR = rl.RED;
 const INACTIVE_COLOR = rl.GRAY;
 
-const State = enum {
+pub const State = enum {
     idle,
     eraser,
-    add_node_single,
+    add_node,
 };
 
 const Self = @This();
@@ -127,7 +127,7 @@ pub fn init() Self {
     };
 }
 
-pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, map: *Map) !void {
+pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *Map) !void {
     const wheel = rl.GetMouseWheelMove();
     if (wheel != 0) {
         camera.zoom += wheel * 0.1;
@@ -140,41 +140,42 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
         camera.target.y -= delta.y / camera.zoom;
     }
 
-    // const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
+    const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
     const KEY_CTRL = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
-    if (rl.IsKeyPressed(rl.KEY_P)) {
-        for (map.nodes.items) |*node| {
-            if (!node.active) continue;
-            std.debug.print("{}: ", .{node.id});
-            for (node.edges.keys()) |edge| {
-                std.debug.print("{}, ", .{edge});
+
+    if (KEY_CTRL and rl.IsKeyDown(rl.KEY_EQUAL)) {
+        camera.zoom = @min(camera.zoom + 1.0, 4.0);
+    } else if (KEY_CTRL and rl.IsKeyDown(rl.KEY_MINUS)) {
+        camera.zoom = @max(camera.zoom - 1.0, 1.0);
+    } else if (!KEY_SHIFT and !KEY_CTRL) {
+        if (rl.IsKeyPressed(rl.KEY_P)) {
+            for (map.nodes.items) |*node| {
+                if (!node.active) continue;
+                std.debug.print("{}: ", .{node.id});
+                for (node.edges.keys()) |edge| {
+                    std.debug.print("{}, ", .{edge});
+                }
+                std.debug.print("\n", .{});
             }
-            std.debug.print("\n", .{});
+        } else if (rl.IsKeyPressed(rl.KEY_V)) {
+            self.state = .idle;
+        } else if (rl.IsKeyPressed(rl.KEY_E)) {
+            self.state = .eraser;
+        } else if (rl.IsKeyPressed(rl.KEY_N)) {
+            self.state = .add_node;
+        } else if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP)) {
+            camera.target.y -= 30;
+        } else if (rl.IsKeyDown(rl.KEY_S) or rl.IsKeyDown(rl.KEY_DOWN)) {
+            camera.target.y += 30;
+        } else if (rl.IsKeyDown(rl.KEY_A) or rl.IsKeyDown(rl.KEY_LEFT)) {
+            camera.target.x -= 30;
+        } else if (rl.IsKeyDown(rl.KEY_D) or rl.IsKeyDown(rl.KEY_RIGHT)) {
+            camera.target.x += 30;
         }
-    } else if (rl.IsKeyPressed(rl.KEY_V)) {
-        self.state = .idle;
-    } else if (rl.IsKeyPressed(rl.KEY_E)) {
-        self.state = .eraser;
-    } else if (rl.IsKeyPressed(rl.KEY_A)) {
-        self.state = .add_node_single;
-    } else if (KEY_CTRL and rl.IsKeyPressed(rl.KEY_S)) {
-        const file = try std.fs.cwd().createFile("src/assets/map.dat", .{});
-        defer file.close();
+    }
 
-        var buffered_writer = std.io.bufferedWriter(file.writer());
-        var writer = buffered_writer.writer();
-
-        for (map.nodes.items) |node| {
-            try writer.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
-            for (node.edges.keys()) |edge| {
-                try writer.print(" {d}", .{edge});
-            }
-            try writer.print("\n", .{});
-        }
-
-        buffered_writer.flush() catch {
-            std.debug.print("Error flushing buffered writer", .{});
-        };
+    if (!KEY_SHIFT and KEY_CTRL and rl.IsKeyPressed(rl.KEY_S)) { // save
+        try map.saveToFile();
     }
 
     rl.BeginDrawing();
@@ -185,24 +186,23 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
     rl.BeginMode2D(camera.*);
     defer rl.EndMode2D();
 
-    if (self.state != .idle) {
-        const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
-        const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
-        const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
-        const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
+    // draw grid
+    const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
+    const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
+    const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
+    const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
 
-        var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE;
-        while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
-            const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
-            const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
-            rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
-        }
-        var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE;
-        while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
-            const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
-            const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
-            rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
-        }
+    var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE;
+    while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
+        const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
+        const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
+        rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
+    }
+    var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE;
+    while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
+        const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
+        const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
+        rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
     }
 
     const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
@@ -213,6 +213,7 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
     switch (self.state) {
         .idle => {},
         .eraser => {
+            self.active_node_id = null;
             if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
                 rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
                 if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
@@ -220,6 +221,9 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
                     for (map.nodes.items) |*node| {
                         if (node.active) {
                             _ = node.edges.swapRemove(node1.id);
+                        }
+                        if (node.edges.count() == 0) {
+                            node.active = false;
                         }
                     }
                     if (self.active_node_id) |active| {
@@ -232,15 +236,22 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
                 if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
                     const node1, const node2 = edge;
                     rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-                    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                         _ = node1.edges.swapRemove(node2.id);
                         _ = node2.edges.swapRemove(node1.id);
+                        if (node1.edges.count() == 0) node1.active = false;
+                        if (node2.edges.count() == 0) node2.active = false;
                     }
                 }
             }
         },
-        .add_node_single => {
+        .add_node => {
             if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
+                if (self.active_node_id) |node_id| {
+                    if (map.nodes.items[node_id].edges.count() == 0) {
+                        map.nodes.items[node_id].active = false;
+                    }
+                }
                 self.active_node_id = null;
             }
 
