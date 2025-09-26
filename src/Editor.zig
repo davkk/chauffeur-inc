@@ -26,27 +26,31 @@ const Self = @This();
 state: State,
 active_node_id: ?usize,
 
-fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
-    for (nodes) |*node| {
-        if (!node.active) continue;
-        if (rl.CheckCollisionPointCircle(mouse_pos, node.pos, 10)) {
-            return node;
+fn hoveredNode(mouse_pos: rl.Vector2, nodes: []?Map.Node) ?*Map.Node {
+    for (nodes) |*maybe_node| {
+        if (maybe_node.*) |*node| {
+            if (!node.active) continue;
+            if (rl.CheckCollisionPointCircle(mouse_pos, node.pos, 10)) {
+                return node;
+            }
         }
     }
     return null;
 }
 
-fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *Map.Node } {
-    for (nodes) |*node1| {
-        if (!node1.active) continue;
-        for (node1.edges.keys()) |edge| {
-            if (node1.id > edge) continue;
+fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []?Map.Node) ?struct { *Map.Node, *Map.Node } {
+    for (nodes) |*maybe_node1| {
+        if (maybe_node1.*) |*node1| {
+            if (!node1.active) continue;
+            for (node1.edges.keys()) |edge| {
+                if (node1.id > edge) continue;
 
-            const node2 = &nodes[edge];
-            if (!node2.active) continue;
+                const node2 = &nodes[edge].?;
+                if (!node2.active) continue;
 
-            if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 10)) {
-                return .{ node1, node2 };
+                if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 10)) {
+                    return .{ node1, node2 };
+                }
             }
         }
     }
@@ -104,16 +108,18 @@ fn pointOnSegment(p: rl.Vector2, a: rl.Vector2, b: rl.Vector2) bool {
     return false;
 }
 
-fn intersectsAny(nodes: []Map.Node, start_id: usize, end_pos: rl.Vector2) bool {
-    const start_pos = nodes[start_id].pos;
-    for (nodes) |*node1| {
-        if (!node1.active) continue;
-        for (node1.edges.keys()) |edge_id| {
-            const node2 = &nodes[edge_id];
-            if (!node2.active) continue;
-            if (pointOnSegment(end_pos, node1.pos, node2.pos)) continue;
-            if (doLinesIntersect(start_pos, end_pos, node1.pos, node2.pos)) {
-                return true;
+fn intersectsAny(nodes: []?Map.Node, start_id: usize, end_pos: rl.Vector2) bool {
+    const start_pos = nodes[start_id].?.pos;
+    for (nodes) |*maybe_node1| {
+        if (maybe_node1.*) |*node1| {
+            if (!node1.active) continue;
+            for (node1.edges.keys()) |edge_id| {
+                const node2 = &nodes[edge_id].?;
+                if (!node2.active) continue;
+                if (pointOnSegment(end_pos, node1.pos, node2.pos)) continue;
+                if (doLinesIntersect(start_pos, end_pos, node1.pos, node2.pos)) {
+                    return true;
+                }
             }
         }
     }
@@ -143,13 +149,15 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
     // const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
     const KEY_CTRL = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
     if (rl.IsKeyPressed(rl.KEY_P)) {
-        for (map.nodes.items) |*node| {
-            if (!node.active) continue;
-            std.debug.print("{}: ", .{node.id});
-            for (node.edges.keys()) |edge| {
-                std.debug.print("{}, ", .{edge});
+        for (map.nodes.items) |*maybe_node| {
+            if (maybe_node.*) |*node| {
+                if (!node.active) continue;
+                std.debug.print("{}: ", .{node.id});
+                for (node.edges.keys()) |edge| {
+                    std.debug.print("{}, ", .{edge});
+                }
+                std.debug.print("\n", .{});
             }
-            std.debug.print("\n", .{});
         }
     } else if (rl.IsKeyPressed(rl.KEY_V)) {
         self.state = .idle;
@@ -164,12 +172,16 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
         var buffered_writer = std.io.bufferedWriter(file.writer());
         var writer = buffered_writer.writer();
 
-        for (map.nodes.items) |node| {
-            try writer.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
-            for (node.edges.keys()) |edge| {
-                try writer.print(" {d}", .{edge});
+        for (map.nodes.items) |maybe_node| {
+            if (maybe_node) |node| {
+                if (node.active) {
+                    try writer.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
+                    for (node.edges.keys()) |edge| {
+                        try writer.print(" {d}", .{edge});
+                    }
+                    try writer.print("\n", .{});
+                }
             }
-            try writer.print("\n", .{});
         }
 
         buffered_writer.flush() catch {
@@ -217,9 +229,11 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
                 rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
                 if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
                     node1.active = false;
-                    for (map.nodes.items) |*node| {
-                        if (node.active) {
-                            _ = node.edges.swapRemove(node1.id);
+                    for (map.nodes.items) |*maybe_node| {
+                        if (maybe_node.*) |*node| {
+                            if (node.active) {
+                                _ = node.edges.swapRemove(node1.id);
+                            }
                         }
                     }
                     if (self.active_node_id) |active| {
@@ -256,10 +270,10 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
                 const target_pos = if (found) new_node.pos else mouse_pos;
 
                 rl.DrawLineEx(
-                    map.nodes.items[node_id].pos,
+                    map.nodes.items[node_id].?.pos,
                     target_pos,
                     LINE_THICKNESS,
-                    if (isValidEdge(map.nodes.items[node_id].pos, target_pos) and !intersectsAny(map.nodes.items, node_id, target_pos)) ACTIVE_COLOR else BAD_COLOR,
+                    if (isValidEdge(map.nodes.items[node_id].?.pos, target_pos) and !intersectsAny(map.nodes.items, node_id, target_pos)) ACTIVE_COLOR else BAD_COLOR,
                 );
 
                 if (found) {
@@ -268,10 +282,15 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
                     rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                 }
 
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].pos, target_pos) and !intersectsAny(map.nodes.items, node_id, target_pos)) {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].?.pos, target_pos) and !intersectsAny(map.nodes.items, node_id, target_pos)) {
                     if (!found) {
-                        try map.nodes.append(Map.Node.init(alloc, mouse_pos, map.nodes.items.len));
-                        new_node = &map.nodes.items[map.nodes.items.len - 1];
+                        const new_id = map.max_id;
+                        map.max_id += 1;
+                        if (new_id >= map.nodes.items.len) {
+                            try map.nodes.resize(new_id + 1);
+                        }
+                        map.nodes.items[new_id] = Map.Node.init(alloc, mouse_pos, new_id);
+                        new_node = &map.nodes.items[new_id].?;
                         // Check if mouse_pos is on an existing edge and split it
                         if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
                             const node_a = split_edge[0];
@@ -285,7 +304,7 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
                         }
                     }
                     try new_node.edges.put(node_id, {});
-                    try map.nodes.items[node_id].edges.put(new_node.id, {});
+                    try map.nodes.items[node_id].?.edges.put(new_node.id, {});
                     self.active_node_id = new_node.id;
                 }
             } else if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
@@ -296,9 +315,13 @@ pub fn draw(self: *Self, alloc: *const std.mem.Allocator, camera: *rl.Camera2D, 
             } else {
                 rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    const new_node = Map.Node.init(alloc, mouse_pos, map.nodes.items.len);
-                    try map.nodes.append(new_node);
-                    const new_node_ptr = &map.nodes.items[map.nodes.items.len - 1];
+                    const new_id = map.max_id;
+                    map.max_id += 1;
+                    if (new_id >= map.nodes.items.len) {
+                        try map.nodes.resize(new_id + 1);
+                    }
+                    map.nodes.items[new_id] = Map.Node.init(alloc, mouse_pos, new_id);
+                    const new_node_ptr = &map.nodes.items[new_id].?;
                     // Check if mouse_pos is on an existing edge and split it
                     if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
                         const node_a = split_edge[0];

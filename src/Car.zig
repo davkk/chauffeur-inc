@@ -38,8 +38,8 @@ angle: f32,
 tires: Tires,
 
 pub fn init() Self {
-    const width = 32;
-    const height = 64;
+    const width = 16;
+    const height = 32;
     const mass = 3.0;
 
     const image = @embedFile("assets/taxi-car.png");

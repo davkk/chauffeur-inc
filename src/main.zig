@@ -30,7 +30,7 @@ pub fn main() !void {
         .target = rl.Vector2{ .x = car.pos.x, .y = car.pos.y },
         .offset = rl.Vector2{ .x = g.SCREEN_WIDTH / 2.0, .y = g.SCREEN_HEIGHT / 2.0 },
         .rotation = car.angle,
-        .zoom = 1,
+        .zoom = 3,
     };
 
     var map = try Map.init(alloc);
