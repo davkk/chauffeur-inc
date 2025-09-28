@@ -55,7 +55,7 @@ pub fn main() !void {
                 rl.BeginDrawing();
                 defer rl.EndDrawing();
 
-                rl.ClearBackground(rl.GRAY);
+                rl.ClearBackground(rl.BLACK);
 
                 rl.BeginMode2D(camera);
                 {

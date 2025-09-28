@@ -63,10 +63,37 @@ pub fn deinit(self: *const Self) void {
 }
 
 pub fn draw(self: *Self) void {
+    // draw pavement
+    for (self.nodes.items) |*node1| {
+        if (!node1.active) continue;
+        rl.DrawCircleV(node1.pos, 1.5 * g.TILE_SIZE, rl.GRAY);
+
+        for (node1.edges.keys()) |edge| {
+            const node2 = &self.nodes.items[edge];
+            if (!node2.active or node1.id > node2.id) continue;
+
+            const dx = @round(node1.pos.x - node2.pos.x);
+            const dy = @round(node2.pos.y - node1.pos.y);
+
+            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
+
+            const mid_x = (node1.pos.x + node2.pos.x) / 2.0;
+            const mid_y = (node1.pos.y + node2.pos.y) / 2.0;
+            const length = @sqrt(dx * dx + dy * dy);
+
+            rl.DrawRectanglePro(
+                .{ .x = mid_x, .y = mid_y, .width = 3 * g.TILE_SIZE, .height = length },
+                .{ .x = 1.5 * g.TILE_SIZE, .y = length / 2 },
+                angle,
+                rl.GRAY,
+            );
+        }
+    }
+
+    // draw edges
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
 
-        // draw roads
         for (node1.edges.keys()) |edge| {
             const node2 = &self.nodes.items[edge];
             if (!node2.active or node1.id > node2.id) continue;
@@ -89,25 +116,12 @@ pub fn draw(self: *Self) void {
                 rl.WHITE,
             );
         }
+    }
 
-        // draw nodes
-        for (node1.edges.keys()) |edge| {
-            const node2 = &self.nodes.items[edge];
-            if (!node2.active) continue;
-
-            const dx = @round(node1.pos.x - node2.pos.x);
-            const dy = @round(node2.pos.y - node1.pos.y);
-            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
-
-            rl.DrawTexturePro(
-                self.tileset.texture,
-                .{ .x = 2 * g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE * 3, .height = g.TILE_SIZE * 2 },
-                .{ .x = node1.pos.x, .y = node1.pos.y, .width = g.TILE_SIZE * 3, .height = g.TILE_SIZE * 2 },
-                .{ .x = g.TILE_SIZE * 1.5, .y = g.TILE_SIZE },
-                angle,
-                rl.WHITE,
-            );
-        }
+    // draw nodes
+    for (self.nodes.items) |*node1| {
+        if (!node1.active) continue;
+        rl.DrawCircleV(node1.pos, g.TILE_SIZE, rl.DARKGRAY);
 
         // draw lines
         for (node1.edges.keys()) |edge| {
