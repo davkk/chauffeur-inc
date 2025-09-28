@@ -114,16 +114,12 @@ pub fn draw(self: *Self) void {
             const node2 = &self.nodes.items[edge];
             if (!node2.active) continue;
 
-            const dx = @round(node1.pos.x - node2.pos.x);
-            const dy = @round(node2.pos.y - node1.pos.y);
-            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
+            const dir = rl.Vector2Normalize(rl.Vector2Subtract(node2.pos, node1.pos));
 
-            rl.DrawTexturePro(
-                self.tileset.texture,
-                .{ .x = g.TILE_SIZE * 5, .y = 0, .width = 2 * g.TILE_SIZE, .height = g.TILE_SIZE },
-                .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * g.TILE_SIZE, .height = g.TILE_SIZE },
-                .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE / 2 },
-                angle,
+            rl.DrawLineEx(
+                rl.Vector2Add(node1.pos, rl.Vector2Scale(dir, g.TILE_SIZE / 2)),
+                rl.Vector2Add(node1.pos, rl.Vector2Scale(dir, g.TILE_SIZE)),
+                2.0,
                 rl.WHITE,
             );
         }

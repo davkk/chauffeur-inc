@@ -9,16 +9,16 @@ pub const SCALE: i32 = 2;
 
 pub const TARGET_FPS = 60;
 
-pub const ENGINE_FORCE: f32 = 2000.0;
+pub const ENGINE_FORCE: f32 = 1500.0;
 pub const BRAKE_FORCE: f32 = 1000.0;
 
-pub const DRAG_FACTOR: f32 = 0.01;
+pub const DRAG_FACTOR: f32 = 0.02;
 pub const ROLLING_RESISTANCE: f32 = 0.6;
 
-pub const CORNERING_STIFFNESS_FRONT: f32 = 3000;
-pub const CORNERING_STIFFNESS_REAR: f32 = 2800;
+pub const CORNERING_STIFFNESS_FRONT: f32 = 5000;
+pub const CORNERING_STIFFNESS_REAR: f32 = 4500;
 
-pub const MAX_GRIP: f32 = 8000;
+pub const MAX_GRIP: f32 = 12000;
 
 pub const VELOCITY_THRESHOLD: f32 = 30.0;
 
