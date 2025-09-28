@@ -17,7 +17,7 @@ pub fn main() !void {
     rl.SetTargetFPS(g.TARGET_FPS);
     rl.SetExitKey(0);
 
-    var mode = Mode.game;
+    var mode = Mode.editor;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -80,7 +80,17 @@ pub fn main() !void {
             },
             .debug => {
                 rl.BeginMode2D(camera);
-                {}
+                {
+                    const points = [_]rl.Vector2{
+                        .{ .x = -100, .y = -100 },
+                        .{ .x = -100, .y = -100 },
+                        .{ .x = -100, .y = 100 },
+                        .{ .x = 100, .y = 100 },
+                        .{ .x = 100, .y = -100 },
+                        .{ .x = -100, .y = -100 },
+                    };
+                    rl.DrawTriangleFan(&points, points.len, rl.GREEN);
+                }
                 rl.EndMode2D();
             },
         }

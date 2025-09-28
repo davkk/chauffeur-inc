@@ -25,6 +25,7 @@ pub const State = enum {
 const Self = @This();
 
 state: State,
+active_tile_type: Map.TileType,
 active_node_id: ?usize,
 
 fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
@@ -52,6 +53,12 @@ fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *M
         }
     }
     return null;
+}
+
+fn snapToGridEdge(pos: rl.Vector2) rl.Vector2 {
+    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
+    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
+    return rl.Vector2{ .x = snappedX, .y = snappedY };
 }
 
 fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
@@ -125,6 +132,7 @@ pub fn init() Self {
     return .{
         .state = .idle,
         .active_node_id = null,
+        .active_tile_type = .pavement,
     };
 }
 
@@ -149,7 +157,14 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
     } else if (KEY_CTRL and rl.IsKeyDown(rl.KEY_MINUS)) {
         camera.zoom = @max(camera.zoom - 1.0, 1.0);
     } else if (!KEY_SHIFT and !KEY_CTRL) {
-        if (rl.IsKeyPressed(rl.KEY_P)) {
+        if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
+            if (self.active_node_id) |node_id| {
+                if (map.nodes.items[node_id].edges.count() == 0) {
+                    map.nodes.items[node_id].active = false;
+                }
+            }
+            self.active_node_id = null;
+        } else if (rl.IsKeyPressed(rl.KEY_P)) {
             for (map.nodes.items) |*node| {
                 if (!node.active) continue;
                 std.debug.print("{}: ", .{node.id});
@@ -201,9 +216,20 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
     }
 
     const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
-    const mouse_pos = snapToGrid(mouse_world_pos);
+    const mouse_pos = snapToGridEdge(mouse_world_pos);
 
     map.draw();
+
+    var tile_iter = map.tiles.iterator();
+    while (tile_iter.next()) |entry| {
+        const tile = entry.key_ptr.*;
+        rl.DrawRectanglePro(
+            .{ .x = tile.pos.x, .y = tile.pos.y, .width = 10, .height = 10 },
+            .{ .x = 5, .y = 5 },
+            0,
+            rl.WHITE,
+        );
+    }
 
     switch (self.state) {
         .idle => {},
@@ -241,15 +267,6 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             }
         },
         .add_node => {
-            if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
-                if (self.active_node_id) |node_id| {
-                    if (map.nodes.items[node_id].edges.count() == 0) {
-                        map.nodes.items[node_id].active = false;
-                    }
-                }
-                self.active_node_id = null;
-            }
-
             if (self.active_node_id) |node_id| {
                 var new_node: *Map.Node = undefined;
                 var found = false;
@@ -320,25 +337,30 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             }
         },
         .fill => {
-            //     if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
-            //         if (self.active_node_id) |node_id| {
-            //             if (map.nodes.items[node_id].edges.count() == 0) {
-            //                 map.nodes.items[node_id].active = false;
-            //             }
-            //         }
-            //         self.active_node_id = null;
-            //     }
-            //
-            //     if (hoveredNode(mouse_pos, map.nodes.items)) |node| {
-            //         if (self.active_node_id) |active_node_id| {
-            //             const centroid = map.nodes.items[active_node_id];
-            //         } else {
-            //             rl.DrawCircleV(node.pos, 10, ACTIVE_COLOR);
-            //             if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-            //                 self.active_node_id = node.id;
-            //             }
-            //         }
-            //     }
+            rl.DrawRectanglePro(
+                .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
+                .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                0,
+                if (self.active_tile_type == .pavement) rl.LIGHTGRAY else if (self.active_tile_type == .grass) rl.GREEN else rl.BLUE,
+            );
+            rl.DrawCircleV(mouse_pos, 10, rl.WHITE);
+
+            if (rl.IsKeyPressed(rl.KEY_ONE)) {
+                self.active_tile_type = .pavement;
+            } else if (rl.IsKeyPressed(rl.KEY_TWO)) {
+                self.active_tile_type = .grass;
+            } else if (rl.IsKeyPressed(rl.KEY_THREE)) {
+                self.active_tile_type = .water;
+            }
+
+            if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
+                const new_tile = Map.Tile{ .tile_type = self.active_tile_type, .pos = mouse_pos };
+                if (map.tiles.getKey(new_tile)) |existing| {
+                    _ = map.tiles.remove(existing);
+                } else {
+                    try map.tiles.put(new_tile, {});
+                }
+            }
         },
     }
 }

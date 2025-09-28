@@ -8,6 +8,30 @@ const Tileset = @import("Tileset.zig");
 
 const FILE_NAME = "src/assets/map.dat";
 
+pub const TileType = enum {
+    pavement,
+    grass,
+    water,
+};
+
+pub const TileContext = struct {
+    pub fn hash(_: TileContext, tile: Tile) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+        hasher.update(std.mem.asBytes(&@as(u32, @bitCast(tile.pos.x))));
+        hasher.update(std.mem.asBytes(&@as(u32, @bitCast(tile.pos.y))));
+        hasher.update(std.mem.asBytes(&@intFromEnum(tile.tile_type)));
+        return hasher.final();
+    }
+    pub fn eql(_: TileContext, a: Tile, b: Tile) bool {
+        return a.tile_type == b.tile_type and a.pos.x == b.pos.x and a.pos.y == b.pos.y;
+    }
+};
+
+pub const Tile = struct {
+    tile_type: TileType,
+    pos: rl.Vector2,
+};
+
 pub const Node = struct {
     pos: rl.Vector2,
     id: usize,
@@ -32,6 +56,7 @@ road_texture: rl.Texture2D,
 tileset: Tileset,
 
 nodes: std.ArrayList(Node),
+tiles: std.HashMap(Tile, void, TileContext, 80),
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
@@ -49,6 +74,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .tileset = tileset,
         .road_texture = road_texture,
         .nodes = std.ArrayList(Node).fromOwnedSlice(alloc, nodes),
+        .tiles = std.HashMap(Tile, void, TileContext, 80).init(alloc),
     };
 }
 
@@ -63,6 +89,56 @@ pub fn deinit(self: *const Self) void {
 }
 
 pub fn draw(self: *Self) void {
+    rl.ClearBackground(rl.BLUE);
+    rl.DrawRectangle(0, 0, math.maxInt(c_int), math.maxInt(c_int), rl.BLACK);
+
+    // draw tiles
+    var tile_iter = self.tiles.iterator();
+    while (tile_iter.next()) |entry| {
+        const tile = entry.key_ptr.*;
+        switch (tile.tile_type) {
+            .pavement => {
+                rl.DrawRectanglePro(
+                    .{
+                        .x = tile.pos.x,
+                        .y = tile.pos.y,
+                        .width = 2 * g.TILE_SIZE,
+                        .height = 2 * g.TILE_SIZE,
+                    },
+                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                    0,
+                    rl.LIGHTGRAY,
+                );
+            },
+            .grass => {
+                rl.DrawRectanglePro(
+                    .{
+                        .x = tile.pos.x,
+                        .y = tile.pos.y,
+                        .width = 2 * g.TILE_SIZE,
+                        .height = 2 * g.TILE_SIZE,
+                    },
+                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                    0,
+                    rl.GREEN,
+                );
+            },
+            .water => {
+                rl.DrawRectanglePro(
+                    .{
+                        .x = tile.pos.x,
+                        .y = tile.pos.y,
+                        .width = 2 * g.TILE_SIZE,
+                        .height = 2 * g.TILE_SIZE,
+                    },
+                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                    0,
+                    rl.BLUE,
+                );
+            },
+        }
+    }
+
     // draw pavement
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;

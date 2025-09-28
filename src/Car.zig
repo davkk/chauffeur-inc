@@ -49,8 +49,8 @@ pub fn init() Self {
         .texture = rl.LoadTextureFromImage(taxi_image),
 
         .pos = .{
-            .x = 0,
-            .y = 0,
+            .x = g.SCREEN_WIDTH,
+            .y = g.SCREEN_HEIGHT,
         },
         .size = .{
             .x = width,
