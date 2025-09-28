@@ -19,6 +19,7 @@ pub const State = enum {
     idle,
     eraser,
     add_node,
+    fill,
 };
 
 const Self = @This();
@@ -163,6 +164,8 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             self.state = .eraser;
         } else if (rl.IsKeyPressed(rl.KEY_N)) {
             self.state = .add_node;
+        } else if (rl.IsKeyPressed(rl.KEY_F)) {
+            self.state = .fill;
         } else if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP)) {
             camera.target.y -= 30;
         } else if (rl.IsKeyDown(rl.KEY_S) or rl.IsKeyDown(rl.KEY_DOWN)) {
@@ -177,14 +180,6 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
     if (!KEY_SHIFT and KEY_CTRL and rl.IsKeyPressed(rl.KEY_S)) { // save
         try map.saveToFile();
     }
-
-    rl.BeginDrawing();
-    defer rl.EndDrawing();
-
-    rl.ClearBackground(rl.BLACK);
-
-    rl.BeginMode2D(camera.*);
-    defer rl.EndMode2D();
 
     // draw grid
     const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
@@ -310,7 +305,6 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                     const new_node = Map.Node.init(alloc, mouse_pos, map.nodes.items.len);
                     try map.nodes.append(new_node);
                     const new_node_ptr = &map.nodes.items[map.nodes.items.len - 1];
-                    // Check if mouse_pos is on an existing edge and split it
                     if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
                         const node_a = split_edge[0];
                         const node_b = split_edge[1];
@@ -324,6 +318,27 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                     self.active_node_id = new_node_ptr.id;
                 }
             }
+        },
+        .fill => {
+            //     if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
+            //         if (self.active_node_id) |node_id| {
+            //             if (map.nodes.items[node_id].edges.count() == 0) {
+            //                 map.nodes.items[node_id].active = false;
+            //             }
+            //         }
+            //         self.active_node_id = null;
+            //     }
+            //
+            //     if (hoveredNode(mouse_pos, map.nodes.items)) |node| {
+            //         if (self.active_node_id) |active_node_id| {
+            //             const centroid = map.nodes.items[active_node_id];
+            //         } else {
+            //             rl.DrawCircleV(node.pos, 10, ACTIVE_COLOR);
+            //             if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+            //                 self.active_node_id = node.id;
+            //             }
+            //         }
+            //     }
         },
     }
 }

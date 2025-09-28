@@ -66,7 +66,7 @@ pub fn draw(self: *Self) void {
     // draw pavement
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
-        rl.DrawCircleV(node1.pos, 1.5 * g.TILE_SIZE, rl.GRAY);
+        rl.DrawCircleV(node1.pos, 1.5 * g.TILE_SIZE, rl.LIGHTGRAY);
 
         for (node1.edges.keys()) |edge| {
             const node2 = &self.nodes.items[edge];
@@ -85,7 +85,7 @@ pub fn draw(self: *Self) void {
                 .{ .x = mid_x, .y = mid_y, .width = 3 * g.TILE_SIZE, .height = length },
                 .{ .x = 1.5 * g.TILE_SIZE, .y = length / 2 },
                 angle,
-                rl.GRAY,
+                rl.LIGHTGRAY,
             );
         }
     }

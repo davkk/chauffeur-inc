@@ -10,14 +10,14 @@ const collision = @import("collision.zig");
 const g = @import("globals.zig");
 const rl = @import("raylib.zig").rl;
 
-const Mode = enum { game, editor };
+const Mode = enum { game, editor, debug };
 
 pub fn main() !void {
     rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc");
     rl.SetTargetFPS(g.TARGET_FPS);
     rl.SetExitKey(0);
 
-    var mode = Mode.editor;
+    var mode = Mode.game;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -45,17 +45,15 @@ pub fn main() !void {
             mode = if (mode == .game) Mode.editor else Mode.game;
         }
 
+        rl.BeginDrawing();
+        rl.ClearBackground(rl.BLACK);
+
         switch (mode) {
             .game => {
                 const time = rl.GetFrameTime();
                 car.update(time);
 
                 camera.target = rl.Vector2{ .x = car.pos.x, .y = car.pos.y };
-
-                rl.BeginDrawing();
-                defer rl.EndDrawing();
-
-                rl.ClearBackground(rl.BLACK);
 
                 rl.BeginMode2D(camera);
                 {
@@ -74,9 +72,19 @@ pub fn main() !void {
                 rl.DrawText(rl.TextFormat("pos: %.f, %.f", car.pos.x, car.pos.y), 10, 185, 20, rl.WHITE);
             },
             .editor => {
-                try editor.draw(alloc, &camera, &map);
+                rl.BeginMode2D(camera);
+                {
+                    try editor.draw(alloc, &camera, &map);
+                }
+                rl.EndMode2D();
+            },
+            .debug => {
+                rl.BeginMode2D(camera);
+                {}
+                rl.EndMode2D();
             },
         }
+        rl.EndDrawing();
 
         // for (map.collidables.items) |collidable| {
         //     const result = collision.collide(
