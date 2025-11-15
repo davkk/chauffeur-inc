@@ -55,7 +55,7 @@ alloc: std.mem.Allocator,
 road_texture: rl.Texture2D,
 tileset: Tileset,
 
-nodes: std.ArrayList(Node),
+nodes: std.array_list.Managed(Node),
 tiles: std.HashMap(Tile, void, TileContext, 80),
 
 pub fn init(alloc: std.mem.Allocator) !Self {
@@ -73,7 +73,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .alloc = alloc,
         .tileset = tileset,
         .road_texture = road_texture,
-        .nodes = std.ArrayList(Node).fromOwnedSlice(alloc, nodes),
+        .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, nodes),
         .tiles = std.HashMap(Tile, void, TileContext, 80).init(alloc),
     };
 }
@@ -217,16 +217,15 @@ pub fn draw(self: *Self) void {
 }
 
 fn loadFromFile(alloc: std.mem.Allocator) ![]Node {
-    var nodes = std.ArrayList(Node).init(alloc);
+    var nodes = std.array_list.Managed(Node).init(alloc);
 
     const file = try std.fs.cwd().openFile(FILE_NAME, .{});
     defer file.close();
 
-    var buffered_reader = std.io.bufferedReader(file.reader());
-    var reader = buffered_reader.reader();
     var line_buf: [1024]u8 = undefined; // TODO: buffer size?
+    var reader = file.reader(&line_buf);
 
-    while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
+    while (try reader.interface.takeDelimiter('\n')) |line| {
         var iter = std.mem.splitSequence(u8, line, " ");
         const node_head = iter.next();
 
@@ -259,7 +258,7 @@ fn normalizeIds(self: *Self, nodes: []Node) ![]Node {
         new_id += 1;
     }
 
-    var new_nodes = std.ArrayList(Node).init(self.alloc);
+    var new_nodes = std.array_list.Managed(Node).init(self.alloc);
     for (nodes) |*node| {
         if (!node.active or node.edges.count() == 0) continue;
         var new_node = Node.init(self.alloc, node.pos, id_map.get(node.id).?);
@@ -278,8 +277,8 @@ pub fn saveToFile(self: *Self) !void {
     const file = try std.fs.cwd().createFile(FILE_NAME, .{});
     defer file.close();
 
-    var buffered_writer = std.io.bufferedWriter(file.writer());
-    var writer = buffered_writer.writer();
+    var buffer: [1024]u8 = undefined;
+    var writer = file.writer(&buffer);
 
     const normalized_nodes = try self.normalizeIds(self.nodes.items);
     defer self.alloc.free(normalized_nodes);
@@ -287,14 +286,14 @@ pub fn saveToFile(self: *Self) !void {
     for (normalized_nodes) |node| {
         if (!node.active) continue;
 
-        try writer.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
+        try writer.interface.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
         for (node.edges.keys()) |edge| {
-            try writer.print(" {d}", .{edge});
+            try writer.interface.print(" {d}", .{edge});
         }
-        try writer.print("\n", .{});
+        try writer.interface.print("\n", .{});
     }
 
-    buffered_writer.flush() catch {
+    writer.interface.flush() catch {
         std.debug.print("Error flushing buffered writer", .{});
     };
 }

@@ -28,7 +28,7 @@
 
     // Tracks the earliest Zig version that the package considers to be a
     // supported use case.
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.2",
 
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
@@ -37,12 +37,12 @@
     // internet connectivity.
     .dependencies = .{
         .raylib = .{
-            .url = "git+https://github.com/raysan5/raylib.git#70daf39eaf460677eefd34f0a17f8515a5b5fe97",
-            .hash = "raylib-5.5.0-whq8uPL-PwScfUoYq47HaChrtamr3X83i2oMIHHCmAko",
+            .url = "git+https://github.com/raysan5/raylib.git#ad17af57e928c61e8e29d2f6c74962c249adf36d",
+            .hash = "raylib-5.6.0-dev-whq8uMxuAQVqfRCWapjRvoS4TxxvQ1mwb0pWTh5dmm_R",
         },
         .raygui = .{
-            .url = "git+https://github.com/raysan5/raygui.git#cf3aab1e9f11aa457a0cbf28dd5741b73cc8c702",
-            .hash = "N-V-__8AADYbbwDEWcbXLhm_WHcS5AbqGIvEptxZjzdUL5aX",
+            .url = "git+https://github.com/raysan5/raygui.git#b9971133b2f7b7513904770d565b683a93fb3624",
+            .hash = "N-V-__8AAIccbwB-BNriehZxfWJ62ImYbayrk3QR9NBSxsU_",
         },
     },
     .paths = .{

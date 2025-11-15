@@ -52,6 +52,13 @@ pub fn build(b: *std.Build) !void {
     }
     b.step("run:game", "Run the game").dependOn(&run_game.step);
 
+    const exe_check = b.addExecutable(.{
+        .name = "chauffeur_inc",
+        .root_module = game_mod,
+    });
+    const check = b.step("check", "Check if chauffeur compiles");
+    check.dependOn(&exe_check.step);
+
     // const exe_unit_tests = b.addTest(.{
     //     .root_module = exe_mod,
     // });
