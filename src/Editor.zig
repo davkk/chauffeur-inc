@@ -55,15 +55,23 @@ fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *M
     return null;
 }
 
-fn snapToGridEdge(pos: rl.Vector2) rl.Vector2 {
-    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
-    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
-    return rl.Vector2{ .x = snappedX, .y = snappedY };
+fn hoveredTile(mouse_pos: rl.Vector2, tiles: Map.TileMap) ?*Map.TilePosition {
+    var tile_iter = tiles.iterator();
+    while (tile_iter.next()) |entry| {
+        const tile_pos = entry.key_ptr;
+        const mx: i32 = @intFromFloat(mouse_pos.x);
+        const my: i32 = @intFromFloat(mouse_pos.y);
+        if (mx == tile_pos.x and my == tile_pos.y) {
+            return tile_pos;
+        }
+    }
+    return null;
 }
 
 fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
-    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
-    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
+    const tile_size = g.TILE_SIZE * 2;
+    const snappedX = @round(pos.x / tile_size) * tile_size;
+    const snappedY = @round(pos.y / tile_size) * tile_size;
     return rl.Vector2{ .x = snappedX, .y = snappedY };
 }
 
@@ -71,61 +79,6 @@ fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
     const dx = pos2.x - pos1.x;
     const dy = pos2.y - pos1.y;
     return dx == 0 or dy == 0 or @abs(dx) == @abs(dy);
-}
-
-fn orientation(p: rl.Vector2, q: rl.Vector2, r: rl.Vector2) i32 {
-    const val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
-    if (val == 0) return 0;
-    return if (val > 0) 1 else 2;
-}
-
-fn doLinesIntersect(a1: rl.Vector2, a2: rl.Vector2, b1: rl.Vector2, b2: rl.Vector2) bool {
-    if ((a1.x == b1.x and a1.y == b1.y) or (a1.x == b2.x and a1.y == b2.y) or (a2.x == b1.x and a2.y == b1.y) or (a2.x == b2.x and a2.y == b2.y)) {
-        return false;
-    }
-
-    const o1 = orientation(a1, a2, b1);
-    const o2 = orientation(a1, a2, b2);
-    const o3 = orientation(b1, b2, a1);
-    const o4 = orientation(b1, b2, a2);
-
-    return o1 != o2 and o3 != o4;
-}
-
-fn pointOnSegment(p: rl.Vector2, a: rl.Vector2, b: rl.Vector2) bool {
-    const min_x = @min(a.x, b.x);
-    const max_x = @max(a.x, b.x);
-    const min_y = @min(a.y, b.y);
-    const max_y = @max(a.y, b.y);
-    if (p.x < min_x or p.x > max_x or p.y < min_y or p.y > max_y) return false;
-    const dx_ab = b.x - a.x;
-    const dy_ab = b.y - a.y;
-    const dx_ap = p.x - a.x;
-    const dy_ap = p.y - a.y;
-    if (dx_ab == 0) {
-        return dx_ap == 0;
-    } else if (dy_ab == 0) {
-        return dy_ap == 0;
-    } else if (@abs(dx_ab) == @abs(dy_ab)) {
-        return @abs(dx_ap) == @abs(dy_ap) and (dx_ap * dy_ab == dy_ap * dx_ab);
-    }
-    return false;
-}
-
-fn intersectsAny(nodes: []Map.Node, start_id: usize, end_pos: rl.Vector2) bool {
-    const start_pos = nodes[start_id].pos;
-    for (nodes) |*node1| {
-        if (!node1.active) continue;
-        for (node1.edges.keys()) |edge_id| {
-            const node2 = &nodes[edge_id];
-            if (!node2.active) continue;
-            if (pointOnSegment(end_pos, node1.pos, node2.pos)) continue;
-            if (doLinesIntersect(start_pos, end_pos, node1.pos, node2.pos)) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 pub fn init() Self {
@@ -216,7 +169,7 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
     }
 
     const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
-    const mouse_pos = snapToGridEdge(mouse_world_pos);
+    const mouse_pos = snapToGrid(mouse_world_pos);
 
     map.draw();
 
@@ -224,7 +177,12 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
     while (tile_iter.next()) |entry| {
         const tile = entry.key_ptr.*;
         rl.DrawRectanglePro(
-            .{ .x = tile.pos.x, .y = tile.pos.y, .width = 10, .height = 10 },
+            .{
+                .x = @floatFromInt(tile.x),
+                .y = @floatFromInt(tile.y),
+                .width = 10,
+                .height = 10,
+            },
             .{ .x = 5, .y = 5 },
             0,
             rl.WHITE,
@@ -253,16 +211,26 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                         }
                     }
                 }
-            } else {
-                if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
-                    const node1, const node2 = edge;
-                    rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                        _ = node1.edges.swapRemove(node2.id);
-                        _ = node2.edges.swapRemove(node1.id);
-                        if (node1.edges.count() == 0) node1.active = false;
-                        if (node2.edges.count() == 0) node2.active = false;
-                    }
+            } else if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
+                const node1, const node2 = edge;
+                rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                    _ = node1.edges.swapRemove(node2.id);
+                    _ = node2.edges.swapRemove(node1.id);
+                    if (node1.edges.count() == 0) node1.active = false;
+                    if (node2.edges.count() == 0) node2.active = false;
+                }
+            } else if (hoveredTile(mouse_pos, map.tiles)) |tile_pos| {
+                rl.DrawCircleV(
+                    .{
+                        .x = @floatFromInt(tile_pos.x),
+                        .y = @floatFromInt(tile_pos.y),
+                    },
+                    10,
+                    ACTIVE_COLOR,
+                );
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
+                    map.tiles.removeByPtr(tile_pos);
                 }
             }
         },
@@ -282,7 +250,7 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                     map.nodes.items[node_id].pos,
                     target_pos,
                     LINE_THICKNESS,
-                    if (isValidEdge(map.nodes.items[node_id].pos, target_pos) and !intersectsAny(map.nodes.items, node_id, target_pos)) ACTIVE_COLOR else BAD_COLOR,
+                    if (isValidEdge(map.nodes.items[node_id].pos, target_pos)) ACTIVE_COLOR else BAD_COLOR,
                 );
 
                 if (found) {
@@ -291,11 +259,10 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                     rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                 }
 
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].pos, target_pos) and !intersectsAny(map.nodes.items, node_id, target_pos)) {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].pos, target_pos)) {
                     if (!found) {
                         try map.nodes.append(Map.Node.init(alloc, mouse_pos, map.nodes.items.len));
                         new_node = &map.nodes.items[map.nodes.items.len - 1];
-                        // Check if mouse_pos is on an existing edge and split it
                         if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
                             const node_a = split_edge[0];
                             const node_b = split_edge[1];
@@ -337,11 +304,16 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             }
         },
         .fill => {
+            const tile_color = switch (self.active_tile_type) {
+                .grass => rl.GREEN,
+                .water => rl.BLUE,
+                .pavement => rl.LIGHTGRAY,
+            };
             rl.DrawRectanglePro(
                 .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
                 .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
                 0,
-                if (self.active_tile_type == .pavement) rl.LIGHTGRAY else if (self.active_tile_type == .grass) rl.GREEN else rl.BLUE,
+                tile_color,
             );
             rl.DrawCircleV(mouse_pos, 10, rl.WHITE);
 
@@ -354,12 +326,13 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             }
 
             if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
-                const new_tile = Map.Tile{ .tile_type = self.active_tile_type, .pos = mouse_pos };
-                if (map.tiles.getKey(new_tile)) |existing| {
-                    _ = map.tiles.remove(existing);
-                } else {
-                    try map.tiles.put(new_tile, {});
-                }
+                try map.tiles.put(
+                    .{
+                        .x = @intFromFloat(mouse_pos.x),
+                        .y = @intFromFloat(mouse_pos.y),
+                    },
+                    self.active_tile_type,
+                );
             }
         },
     }
