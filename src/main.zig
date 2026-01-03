@@ -27,8 +27,7 @@ pub fn main() !void {
     defer car.deinit();
 
     var camera = rl.Camera2D{
-        .target = rl.Vector2{ .x = car.pos.x, .y = car.pos.y },
-        .offset = rl.Vector2{ .x = g.SCREEN_WIDTH / 2.0, .y = g.SCREEN_HEIGHT / 2.0 },
+        .target = rl.Vector2{ .x = 0, .y = 0 },
         .rotation = car.angle,
         .zoom = 1,
     };
@@ -52,8 +51,6 @@ pub fn main() !void {
             .game => {
                 const time = rl.GetFrameTime();
                 car.update(time);
-
-                camera.target = rl.Vector2{ .x = car.pos.x, .y = car.pos.y };
 
                 rl.BeginMode2D(camera);
                 {

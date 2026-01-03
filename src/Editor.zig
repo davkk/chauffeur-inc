@@ -78,7 +78,7 @@ fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
 fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
     const dx = pos2.x - pos1.x;
     const dy = pos2.y - pos1.y;
-    return dx == 0 or dy == 0 or @abs(dx) == @abs(dy);
+    return dx == 0 or dy == 0;
 }
 
 pub fn init() Self {
@@ -135,11 +135,11 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
         } else if (rl.IsKeyPressed(rl.KEY_F)) {
             self.state = .fill;
         } else if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP)) {
-            camera.target.y -= 30;
+            camera.target.y = @max(camera.target.y - 30, 0);
         } else if (rl.IsKeyDown(rl.KEY_S) or rl.IsKeyDown(rl.KEY_DOWN)) {
             camera.target.y += 30;
         } else if (rl.IsKeyDown(rl.KEY_A) or rl.IsKeyDown(rl.KEY_LEFT)) {
-            camera.target.x -= 30;
+            camera.target.x = @max(camera.target.x - 30, 0);
         } else if (rl.IsKeyDown(rl.KEY_D) or rl.IsKeyDown(rl.KEY_RIGHT)) {
             camera.target.x += 30;
         }

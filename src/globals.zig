@@ -1,6 +1,6 @@
 const math = @import("std").math;
 
-pub const TILE_SIZE = 64;
+pub const TILE_SIZE = 32;
 
 pub const SCREEN_WIDTH = 1920;
 pub const SCREEN_HEIGHT = 1200;
