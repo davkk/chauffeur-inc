@@ -9,6 +9,9 @@ pub const SCALE: i32 = 2;
 
 pub const TARGET_FPS = 60;
 
+pub const FRICTION = 200;
+pub const MAX_SPEED = 300;
+
 pub const ENGINE_FORCE: f32 = 1500.0;
 pub const BRAKE_FORCE: f32 = 1000.0;
 

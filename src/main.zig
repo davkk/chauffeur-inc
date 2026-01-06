@@ -10,7 +10,7 @@ const collision = @import("collision.zig");
 const g = @import("globals.zig");
 const rl = @import("raylib.zig").rl;
 
-const Mode = enum { game, editor, debug };
+const Mode = enum { game, editor };
 
 pub fn main() !void {
     rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc");
@@ -23,17 +23,26 @@ pub fn main() !void {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var car = Car.init();
-    defer car.deinit();
-
     var camera = rl.Camera2D{
         .target = rl.Vector2{ .x = 0, .y = 0 },
-        .rotation = car.angle,
         .zoom = 1,
     };
 
     var map = try Map.init(alloc);
     defer map.deinit();
+
+    // FIXME: this will probably change once I have levels
+    const init_node = map.nodes.items[0];
+    var player = Car.init(true, init_node.pos.x, init_node.pos.y, math.pi / 2.0);
+    player.curr_node = init_node.id;
+    defer player.deinit();
+
+    var cars = std.array_list.Managed(Car).init(alloc);
+    for (0..3) |_| {
+        var car = Car.init(false, init_node.pos.x, init_node.pos.y, math.pi / 2.0);
+        car.curr_node = init_node.id;
+        try cars.append(car);
+    }
 
     var editor = Editor.init();
 
@@ -50,43 +59,35 @@ pub fn main() !void {
         switch (mode) {
             .game => {
                 const time = rl.GetFrameTime();
-                car.update(time);
+
+                player.update(time, &map);
+                for (cars.items) |*car| {
+                    car.update(time, &map);
+                }
 
                 rl.BeginMode2D(camera);
                 {
                     map.draw();
-                    car.draw();
+
+                    player.draw();
+                    for (cars.items) |*car| {
+                        car.draw();
+                    }
+
+                    if (player.next_node) |target_index| {
+                        const target = map.nodes.items[target_index];
+                        rl.DrawCircleV(target.pos, 10, rl.RED);
+                    }
                 }
                 rl.EndMode2D();
 
-                rl.DrawText(rl.TextFormat("throttle: %.1f", car.throttle), 10, 10, 20, rl.WHITE);
-                rl.DrawText(rl.TextFormat("brake: %.1f", car.brake), 10, 35, 20, rl.WHITE);
-                rl.DrawText(rl.TextFormat("steer: %.2f", car.steer), 10, 60, 20, rl.WHITE);
-
-                rl.DrawText(rl.TextFormat("angular_vel: %.2f", car.angular_vel), 10, 110, 20, rl.WHITE);
-                rl.DrawText(rl.TextFormat("vel: %.2f", rl.Vector2Length(car.vel)), 10, 135, 20, rl.WHITE);
-
-                rl.DrawText(rl.TextFormat("pos: %.f, %.f", car.pos.x, car.pos.y), 10, 185, 20, rl.WHITE);
+                rl.DrawText(rl.TextFormat("vel: %.2f", rl.Vector2Length(player.vel)), 10, 10, 20, rl.WHITE);
+                rl.DrawText(rl.TextFormat("pos: %.f, %.f", player.pos.x, player.pos.y), 10, 35, 20, rl.WHITE);
             },
             .editor => {
                 rl.BeginMode2D(camera);
                 {
                     try editor.draw(alloc, &camera, &map);
-                }
-                rl.EndMode2D();
-            },
-            .debug => {
-                rl.BeginMode2D(camera);
-                {
-                    const points = [_]rl.Vector2{
-                        .{ .x = -100, .y = -100 },
-                        .{ .x = -100, .y = -100 },
-                        .{ .x = -100, .y = 100 },
-                        .{ .x = 100, .y = 100 },
-                        .{ .x = 100, .y = -100 },
-                        .{ .x = -100, .y = -100 },
-                    };
-                    rl.DrawTriangleFan(&points, points.len, rl.GREEN);
                 }
                 rl.EndMode2D();
             },

@@ -7,72 +7,67 @@ const vec_add = @import("raylib.zig").vec_add;
 const math = @import("std").math;
 const g = @import("globals.zig");
 
-const Tire = struct {
-    size: rl.Vector2,
-};
+const Map = @import("Map.zig");
 
-const Tires = struct {
-    front: Tire,
-    rear: Tire,
-};
+const Action = enum { left, right, straight };
 
 const Self = @This();
 
 texture: rl.Texture2D,
 
+is_player: bool,
+
 pos: rl.Vector2,
 size: rl.Vector2,
 
-throttle: f32,
-brake: f32,
-steer: f32,
+curr_node: ?usize,
+next_node: ?usize,
 
+speed: f32,
 vel: rl.Vector2,
-angular_vel: f32,
 
-mass: f32,
-inertia: f32,
+accel: f32,
+frict: f32,
+brake: f32,
 
 angle: f32,
 
-tires: Tires,
+next_action: ?Action,
 
-pub fn init() Self {
+pub fn init(is_player: bool, x: f32, y: f32, angle: f32) Self {
     const width = 16;
     const height = 32;
-    const mass = 3.0;
 
     const image = @embedFile("assets/taxi-car.png");
     const taxi_image = rl.LoadImageFromMemory(".png", image.ptr, @intCast(image.len));
 
     return .{
+        .is_player = is_player,
+
         .texture = rl.LoadTextureFromImage(taxi_image),
 
         .pos = .{
-            .x = g.SCREEN_WIDTH,
-            .y = g.SCREEN_HEIGHT,
+            .x = x,
+            .y = y,
         },
         .size = .{
             .x = width,
             .y = height,
         },
 
-        .throttle = 0,
-        .brake = 0,
-        .steer = 0,
+        .curr_node = null,
+        .next_node = null,
 
-        .vel = .{ .x = 0, .y = 0 },
-        .angular_vel = 0,
+        .accel = 60,
+        .frict = 100,
+        .brake = 250,
 
-        .mass = mass,
-        .inertia = mass * (width * width + height * height) / 12.0,
+        .speed = 0,
+        .vel = rl.Vector2Zero(),
 
-        .angle = 0.0,
+        .angle = angle,
 
-        .tires = .{
-            .front = .{ .size = .{ .x = width / 5, .y = height / 5 } },
-            .rear = .{ .size = .{ .x = width / 5, .y = height / 5 } },
-        },
+        .next_action = null,
     };
 }
 
@@ -80,101 +75,91 @@ pub fn deinit(self: *Self) void {
     rl.UnloadTexture(self.texture);
 }
 
-pub fn update(self: *Self, time: f32) void {
+fn findNextNode(pos: rl.Vector2, angle: f32, curr_index: usize, map: *const Map) ?usize {
+    const curr = &map.nodes.items[curr_index];
     const forward = rl.Vector2{
-        .x = math.sin(self.angle),
-        .y = -math.cos(self.angle),
+        .x = math.sin(angle),
+        .y = -math.cos(angle),
     };
-    const right = rl.Vector2{
-        .x = forward.y,
-        .y = -forward.x,
-    };
-
-    const vel_x = rl.Vector2DotProduct(right, self.vel);
-    const vel_y = rl.Vector2DotProduct(forward, self.vel);
-
-    if (rl.IsKeyDown(rl.KEY_A)) {
-        self.steer = @max(-1, self.steer - g.STEER_SPEED * time);
-    } else if (rl.IsKeyDown(rl.KEY_D)) {
-        self.steer = @min(1, self.steer + g.STEER_SPEED * time);
-    } else {
-        self.steer -= math.sign(self.steer) * @min(@abs(self.steer), 2 * g.STEER_SPEED * time);
-    }
-
-    if (rl.IsKeyDown(rl.KEY_W)) {
-        if (vel_y >= 0) {
-            self.throttle = 1;
-            self.brake = 0;
-        } else {
-            self.throttle = 0;
-            self.brake = 1;
+    for (curr.edges.keys()) |edge_id| {
+        const node = &map.nodes.items[edge_id];
+        const dir = rl.Vector2Subtract(node.pos, pos);
+        if (@floor(rl.Vector2DotProduct(forward, dir)) > 0) {
+            return edge_id;
         }
-    } else if (rl.IsKeyDown(rl.KEY_S)) {
-        if (vel_y <= 0) {
-            self.throttle = -1;
-            self.brake = 0;
-        } else {
-            self.throttle = 0;
-            self.brake = 1;
+    }
+    return null;
+}
+
+pub fn update(self: *Self, time: f32, map: *const Map) void {
+    if (self.is_player) {
+        if (rl.IsKeyPressed(rl.KEY_W)) {
+            self.next_action = .straight;
+        } else if (rl.IsKeyPressed(rl.KEY_D)) {
+            self.next_action = .right;
+        } else if (rl.IsKeyPressed(rl.KEY_A)) {
+            self.next_action = .left;
         }
-    } else {
-        self.throttle = 0;
-        self.brake = 0;
     }
 
-    const F_drag = rl.Vector2Scale(self.vel, -g.DRAG_FACTOR * rl.Vector2Length(self.vel));
-    const F_rr = rl.Vector2Scale(self.vel, -g.ROLLING_RESISTANCE);
+    if (self.next_node) |target_index| {
+        const target = map.nodes.items[target_index];
+        const dist = rl.Vector2Distance(self.pos, target.pos);
+        if (dist < 5.0) {
+            self.pos = target.pos;
+            self.curr_node = target_index;
+            self.next_node = null;
 
-    var F_trac = rl.Vector2Zero();
-    if (self.throttle != 0) {
-        F_trac = rl.Vector2Scale(forward, self.throttle * g.ENGINE_FORCE);
+            if (!self.is_player) {
+                const pi_2: f32 = math.pi / 2.0;
+                // FIXME: this is dangerous
+                while (true) {
+                    const action = std.crypto.random.enumValue(Action);
+                    const angle = self.angle + switch (action) {
+                        .left => -pi_2,
+                        .right => pi_2,
+                        .straight => 0.0,
+                    };
+                    if (findNextNode(self.pos, angle, target_index, map) != null) {
+                        self.next_action = action;
+                        break;
+                    }
+                }
+            }
+            if (self.next_action == .left or self.next_action == .right) {
+                self.speed *= 0.6;
+            }
+            return;
+        }
+
+        self.speed = @min(self.speed + self.accel * time, g.MAX_SPEED);
+        if (rl.IsKeyDown(rl.KEY_S)) {
+            self.speed = @max(self.speed - self.brake * time, 0);
+        }
+
+        const dir = rl.Vector2Normalize(rl.Vector2Subtract(target.pos, self.pos));
+        self.vel = rl.Vector2Scale(dir, self.speed);
+        self.pos.x += self.vel.x * time;
+        self.pos.y += self.vel.y * time;
+        return;
     }
 
-    var F_break = rl.Vector2Zero();
-    if (self.brake != 0) {
-        const vel_dir = rl.Vector2Normalize(self.vel);
-        F_break = rl.Vector2Scale(vel_dir, -self.brake * g.BRAKE_FORCE);
+    if (self.curr_node) |curr_index| {
+        if (self.next_action) |next_action| {
+            switch (next_action) {
+                .left => self.angle -= math.pi / 2.0,
+                .right => self.angle += math.pi / 2.0,
+                .straight => {},
+            }
+            self.next_action = null;
+        }
+        self.next_node = findNextNode(self.pos, self.angle, curr_index, map);
+        if (self.next_node == null) {
+            self.vel = rl.Vector2Zero();
+            self.speed = 0;
+            // TODO: game over, hit a wall
+        }
     }
-
-    const axel = self.size.y / 2;
-    const steer_angle = self.steer * g.MAX_STEER_ANGLE;
-
-    const slip_front = math.atan2(vel_x + self.angular_vel * axel, @abs(vel_y)) - math.sign(vel_y) * steer_angle;
-    const slip_rear = math.atan2(vel_x - self.angular_vel * axel, @abs(vel_y));
-
-    const F_lat_front_mag = math.clamp(-g.CORNERING_STIFFNESS_FRONT * slip_front, -g.MAX_GRIP, g.MAX_GRIP);
-    const F_lat_rear_mag = math.clamp(-g.CORNERING_STIFFNESS_REAR * slip_rear, -g.MAX_GRIP, g.MAX_GRIP);
-
-    const F_lat_front = rl.Vector2Scale(right, F_lat_front_mag);
-    const F_lat_rear = rl.Vector2Scale(right, F_lat_rear_mag);
-
-    const F_net = vec_add(&.{
-        F_trac,
-        F_break,
-        F_drag,
-        F_rr,
-        F_lat_front,
-        F_lat_rear,
-    });
-    const accel = rl.Vector2Scale(F_net, 1 / self.mass);
-
-    self.vel = rl.Vector2Add(self.vel, rl.Vector2Scale(accel, time));
-    self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, time));
-
-    const F_torque = axel * (F_lat_front_mag - F_lat_rear_mag);
-    const angular_accel = F_torque / self.inertia;
-
-    self.angular_vel += angular_accel * time;
-    if (@abs(self.angular_vel) < 1e-1) {
-        self.angular_vel = 0;
-    }
-
-    if (@abs(rl.Vector2Length(self.vel)) < g.VELOCITY_THRESHOLD and self.brake == 0 and self.throttle == 0) {
-        self.vel = rl.Vector2Zero();
-        self.angular_vel = 0;
-    }
-
-    self.angle = @mod(self.angle + self.angular_vel * time, 2 * math.pi);
 }
 
 pub fn rect(self: *const Self) rl.Rectangle {
@@ -187,11 +172,6 @@ pub fn rect(self: *const Self) rl.Rectangle {
 }
 
 pub fn draw(self: *const Self) void {
-    self.draw_tire(0, self.tires.front.size.y / 1.2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
-    self.draw_tire(0, self.size.y - self.tires.rear.size.y / 1.2, self.tires.rear, 0);
-    self.draw_tire(self.size.x, self.tires.front.size.y / 1.2, self.tires.front, self.steer * g.MAX_STEER_ANGLE);
-    self.draw_tire(self.size.x, self.size.y - self.tires.rear.size.y / 1.2, self.tires.rear, 0);
-
     rl.DrawTexturePro(
         self.texture,
         .{ .x = 0, .y = 0, .width = self.size.x, .height = self.size.y },
@@ -199,24 +179,5 @@ pub fn draw(self: *const Self) void {
         .{ .x = self.size.x / 2, .y = self.size.y / 2 },
         self.angle * 180 / math.pi,
         rl.WHITE,
-    );
-}
-
-fn draw_tire(self: *const Self, x: f32, y: f32, tire: Tire, steer_angle: f32) void {
-    const tire_pos = vec_rotate(
-        .{ .x = self.pos.x + x - self.size.x / 2, .y = self.pos.y + y - self.size.y / 2 },
-        self.pos,
-        self.angle,
-    );
-    rl.DrawRectanglePro(
-        .{
-            .x = tire_pos.x,
-            .y = tire_pos.y,
-            .width = tire.size.x,
-            .height = tire.size.y,
-        },
-        .{ .x = tire.size.x / 2, .y = tire.size.y / 2 },
-        (self.angle + steer_angle) * 180 / math.pi,
-        rl.BLACK,
     );
 }
