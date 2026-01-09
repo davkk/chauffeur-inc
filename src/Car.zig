@@ -91,6 +91,8 @@ fn findNextNode(pos: rl.Vector2, angle: f32, curr_index: usize, map: *const Map)
     return null;
 }
 
+const PI_2: f32 = math.pi / 2.0;
+
 pub fn update(self: *Self, time: f32, map: *const Map) void {
     if (self.is_player) {
         if (rl.IsKeyPressed(rl.KEY_W)) {
@@ -102,38 +104,57 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
         }
     }
 
-    if (self.next_node) |target_index| {
-        const target = map.nodes.items[target_index];
+    if (self.next_node) |next_idx| {
+        const target = map.nodes.items[next_idx];
         const dist = rl.Vector2Distance(self.pos, target.pos);
-        if (dist < 5.0) {
-            self.pos = target.pos;
-            self.curr_node = target_index;
+
+        if (dist < self.size.y and self.next_action == .right or dist < 5.0) {
+            self.curr_node = next_idx;
             self.next_node = null;
 
             if (!self.is_player) {
-                const pi_2: f32 = math.pi / 2.0;
-                // FIXME: this is dangerous
-                while (true) {
-                    const action = std.crypto.random.enumValue(Action);
-                    const angle = self.angle + switch (action) {
-                        .left => -pi_2,
-                        .right => pi_2,
-                        .straight => 0.0,
-                    };
-                    if (findNextNode(self.pos, angle, target_index, map) != null) {
-                        self.next_action = action;
-                        break;
-                    }
+                // TODO: this will be changed when I implement path finding for ai cars
+                const action = std.crypto.random.enumValue(Action);
+                if (findNextNode(target.pos, self.angle, next_idx, map)) |next_next_idx| {
+                    self.next_action = action;
+                    self.next_node = next_next_idx;
+                } else {
+                    self.vel = rl.Vector2Zero();
+                    self.speed = 0;
+                    self.pos = rl.Vector2{ .x = -1000, .y = -1000 };
                 }
             }
+
+            if (self.next_action) |next_action| {
+                switch (next_action) {
+                    .left => {
+                        self.angle -= PI_2;
+                        self.pos = target.pos;
+                    },
+                    .right => {
+                        self.angle += PI_2;
+                        const forward = rl.Vector2{
+                            .x = math.sin(self.angle),
+                            .y = -math.cos(self.angle),
+                        };
+                        self.pos = rl.Vector2Add(target.pos, rl.Vector2Scale(forward, self.size.y));
+                    },
+                    .straight => {
+                        self.pos = target.pos;
+                    },
+                }
+                self.next_action = null;
+            }
+
             if (self.next_action == .left or self.next_action == .right) {
                 self.speed *= 0.6;
             }
+
             return;
         }
 
         self.speed = @min(self.speed + self.accel * time, g.MAX_SPEED);
-        if (rl.IsKeyDown(rl.KEY_S)) {
+        if (self.is_player and rl.IsKeyDown(rl.KEY_S)) {
             self.speed = @max(self.speed - self.brake * time, 0);
         }
 
@@ -144,16 +165,9 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
         return;
     }
 
-    if (self.curr_node) |curr_index| {
-        if (self.next_action) |next_action| {
-            switch (next_action) {
-                .left => self.angle -= math.pi / 2.0,
-                .right => self.angle += math.pi / 2.0,
-                .straight => {},
-            }
-            self.next_action = null;
-        }
-        self.next_node = findNextNode(self.pos, self.angle, curr_index, map);
+    if (self.curr_node) |curr_idx| {
+        const curr_node = &map.nodes.items[curr_idx];
+        self.next_node = findNextNode(curr_node.pos, self.angle, curr_idx, map);
         if (self.next_node == null) {
             self.vel = rl.Vector2Zero();
             self.speed = 0;
@@ -172,10 +186,24 @@ pub fn rect(self: *const Self) rl.Rectangle {
 }
 
 pub fn draw(self: *const Self) void {
+    const forward = rl.Vector2{
+        .x = math.sin(self.angle),
+        .y = -math.cos(self.angle),
+    };
+    const right = rl.Vector2{
+        .x = -forward.y,
+        .y = forward.x,
+    };
+
+    const offset = vec_add(&.{
+        self.pos,
+        rl.Vector2Scale(right, self.size.x),
+    });
+
     rl.DrawTexturePro(
         self.texture,
         .{ .x = 0, .y = 0, .width = self.size.x, .height = self.size.y },
-        .{ .x = self.pos.x, .y = self.pos.y, .width = self.size.x, .height = self.size.y },
+        .{ .x = offset.x, .y = offset.y, .width = self.size.x, .height = self.size.y },
         .{ .x = self.size.x / 2, .y = self.size.y / 2 },
         self.angle * 180 / math.pi,
         rl.WHITE,
