@@ -25,7 +25,7 @@ pub fn main() !void {
 
     var camera = rl.Camera2D{
         .target = rl.Vector2{ .x = 0, .y = 0 },
-        .zoom = 1,
+        .zoom = 2,
     };
 
     var map = try Map.init(alloc);

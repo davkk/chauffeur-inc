@@ -18,3 +18,6 @@ pub const TILES = [_]rl.Rectangle{
 pub const COLLIDABLES = [_]rl.Rectangle{};
 
 pub const TILE_DEFINITIONS = TILES ++ COLLIDABLES;
+
+pub const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
+

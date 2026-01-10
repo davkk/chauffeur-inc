@@ -32,7 +32,7 @@ const Self = @This();
 
 alloc: std.mem.Allocator,
 
-road_texture: [2]rl.Texture2D,
+road_texture: [3]rl.Texture2D,
 tileset: Tileset,
 
 nodes: std.array_list.Managed(Node),
@@ -41,15 +41,28 @@ tiles: TileMap,
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
 
-    var road = rl.LoadImageFromTexture(tileset.texture);
-    rl.ImageCrop(&road, .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = g.TILE_SIZE });
-
-    var node = rl.LoadImageFromTexture(tileset.texture);
-    rl.ImageCrop(&node, .{ .x = 2 * g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE });
+    var road_texture: [3]rl.Texture2D = .{ .{}, .{}, .{} };
+    for (0..2) |idx| {
+        var image = rl.LoadImageFromTexture(tileset.texture);
+        rl.ImageCrop(&image, .{
+            .x = @floatFromInt(idx * g.TILE_SIZE),
+            .y = 0,
+            .width = g.TILE_SIZE,
+            .height = g.TILE_SIZE,
+        });
+        road_texture[idx] = rl.LoadTextureFromImage(image);
+        rl.SetTextureWrap(road_texture[idx], rl.TEXTURE_WRAP_REPEAT);
+    }
+    var node_image = rl.LoadImageFromTexture(tileset.texture);
+    rl.ImageCrop(&node_image, .{
+        .x = 0,
+        .y = g.TILE_SIZE,
+        .width = 2 * g.TILE_SIZE,
+        .height = 2 * g.TILE_SIZE,
+    });
+    road_texture[2] = rl.LoadTextureFromImage(node_image);
 
     const nodes = try loadFromFile(alloc);
-
-    const road_texture = [2]rl.Texture2D{ rl.LoadTextureFromImage(road), rl.LoadTextureFromImage(node) };
 
     return .{
         .alloc = alloc,
@@ -70,11 +83,12 @@ pub fn deinit(self: *const Self) void {
     self.nodes.deinit();
 }
 
-const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
-
 pub fn draw(self: *Self, active_group: TextureGroupType) void {
     rl.ClearBackground(rl.BLUE);
     rl.DrawRectangle(0, 0, math.maxInt(c_int), math.maxInt(c_int), rl.BLACK);
+
+    const tile_color = if (active_group == .none or active_group == .tiles) rl.WHITE else g.SEMI_TRANSPARENT;
+    const road_color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
 
     // draw tiles
     var tile_iter = self.tiles.iterator();
@@ -88,12 +102,27 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
             .{
                 .x = @floatFromInt(tile_pos.x),
                 .y = @floatFromInt(tile_pos.y),
-                .width = 2 * g.TILE_SIZE,
-                .height = 2 * g.TILE_SIZE,
+                .width = g.TILE_SIZE,
+                .height = g.TILE_SIZE,
             },
+            .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+            0,
+            tile_color,
+        );
+    }
+
+    // draw nodes
+    for (self.nodes.items) |*node1| {
+        if (!node1.active) continue;
+        const color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
+
+        rl.DrawTexturePro(
+            self.road_texture[2],
+            .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
+            .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
             .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
             0,
-            if (active_group == .none or active_group == .tiles) rl.WHITE else SEMI_TRANSPARENT,
+            color,
         );
     }
 
@@ -105,52 +134,45 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
             const node2 = &self.nodes.items[edge];
             if (!node2.active or node1.id > node2.id) continue;
 
-            const dx = @round(node1.pos.x - node2.pos.x);
-            const dy = @round(node2.pos.y - node1.pos.y);
-
-            const angle = -math.atan2(dy, dx) * 180.0 / math.pi - 90;
+            const dx = @abs(@round(node1.pos.x - node2.pos.x));
+            const dy = @abs(@round(node2.pos.y - node1.pos.y));
 
             const mid_x = (node1.pos.x + node2.pos.x) / 2.0;
             const mid_y = (node1.pos.y + node2.pos.y) / 2.0;
-            const length = @sqrt(dx * dx + dy * dy);
+            const length = (if (dx > dy) dx else dy) - 2; // to avoid overlap at junctions
 
+            const angle: f32 = if (dx == 0) 0 else 90;
+            const offset_x: f32 = if (dx == 0) g.TILE_SIZE else 0;
+            const offset_y: f32 = if (dy == 0) g.TILE_SIZE else 0;
+
+            // road left
             rl.DrawTexturePro(
                 self.road_texture[0],
-                .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = length },
-                .{ .x = mid_x, .y = mid_y, .width = 2 * g.TILE_SIZE, .height = length },
-                .{ .x = g.TILE_SIZE, .y = length / 2 },
+                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = length },
+                .{ .x = mid_x - offset_x, .y = mid_y - offset_y, .width = g.TILE_SIZE, .height = length },
+                .{ .x = g.TILE_SIZE / 2, .y = length / 2 },
                 angle,
-                if (active_group == .none or active_group == .road) rl.WHITE else SEMI_TRANSPARENT,
+                road_color,
             );
-        }
-    }
 
-    // draw nodes
-    for (self.nodes.items) |*node1| {
-        if (!node1.active) continue;
-        const color = if (active_group == .none or active_group == .road) rl.WHITE else SEMI_TRANSPARENT;
+            // road line
+            rl.DrawTexturePro(
+                self.road_texture[1],
+                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = length },
+                .{ .x = mid_x, .y = mid_y, .width = g.TILE_SIZE, .height = length },
+                .{ .x = g.TILE_SIZE / 2, .y = length / 2 },
+                angle,
+                road_color,
+            );
 
-        rl.DrawTexturePro(
-            self.road_texture[1],
-            .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-            .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
-            .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
-            0,
-            color,
-        );
-
-        // draw lines
-        for (node1.edges.keys()) |edge| {
-            const node2 = &self.nodes.items[edge];
-            if (!node2.active) continue;
-
-            const dir = rl.Vector2Normalize(rl.Vector2Subtract(node2.pos, node1.pos));
-
-            rl.DrawLineEx(
-                rl.Vector2Add(node1.pos, rl.Vector2Scale(dir, g.TILE_SIZE / 2)),
-                rl.Vector2Add(node1.pos, rl.Vector2Scale(dir, g.TILE_SIZE)),
-                2.0,
-                color,
+            // road right
+            rl.DrawTexturePro(
+                self.road_texture[0],
+                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = length },
+                .{ .x = mid_x + offset_x, .y = mid_y + offset_y, .width = g.TILE_SIZE, .height = length },
+                .{ .x = g.TILE_SIZE / 2, .y = length / 2 },
+                angle + 180,
+                road_color,
             );
         }
     }

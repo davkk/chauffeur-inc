@@ -44,7 +44,10 @@ state: State,
 active_tile_type: ?usize,
 active_node_id: ?usize,
 active_group: TextureGroupType,
-group_expanded: [3]bool,
+group_expanded: [2]bool,
+
+start_pos: ?rl.Vector2,
+end_pos: ?rl.Vector2,
 
 fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
     for (nodes) |*node| {
@@ -87,10 +90,9 @@ fn hoveredTile(mouse_pos: rl.Vector2, tiles: Map.TileMap) ?*Map.TilePosition {
 }
 
 fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
-    const tile_size = g.TILE_SIZE * 2;
-    const snappedX = @round(pos.x / tile_size) * tile_size;
-    const snappedY = @round(pos.y / tile_size) * tile_size;
-    return rl.Vector2{ .x = snappedX, .y = snappedY };
+    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
+    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
+    return .{ .x = snappedX, .y = snappedY };
 }
 
 fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
@@ -105,7 +107,9 @@ pub fn init() Self {
         .active_node_id = null,
         .active_tile_type = null,
         .active_group = .none,
-        .group_expanded = [_]bool{ true, true, true },
+        .group_expanded = [_]bool{ true, true },
+        .start_pos = null,
+        .end_pos = null,
     };
 }
 
@@ -148,6 +152,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
             }
         } else if (rl.IsKeyPressed(rl.KEY_V)) {
             self.state = .idle;
+            self.active_group = .none;
         } else if (rl.IsKeyPressed(rl.KEY_E)) {
             self.state = .eraser;
         } else if (rl.IsKeyPressed(rl.KEY_N)) {
@@ -231,14 +236,7 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
                     if (node2.edges.count() == 0) node2.active = false;
                 }
             } else if (hoveredTile(mouse_pos, map.tiles)) |tile_pos| {
-                rl.DrawCircleV(
-                    .{
-                        .x = @floatFromInt(tile_pos.x),
-                        .y = @floatFromInt(tile_pos.y),
-                    },
-                    10,
-                    ACTIVE_COLOR,
-                );
+                rl.DrawRectanglePro(.{ .x = @floatFromInt(tile_pos.x), .y = @floatFromInt(tile_pos.y), .width = g.TILE_SIZE, .height = g.TILE_SIZE }, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
                 if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     map.tiles.removeByPtr(tile_pos);
                 }
@@ -315,26 +313,63 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
         },
         .fill => {
             // TODO: make it so that when selected it turns into .fill mode
+            rl.DrawRectanglePro(.{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE }, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
             if (self.active_tile_type) |active_tile_type| {
-                const def = g.TILE_DEFINITIONS[active_tile_type];
+                const curr_tex = g.TILE_DEFINITIONS[active_tile_type];
                 rl.DrawTexturePro(
                     tileset_texture,
-                    def,
-                    .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
-                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                    curr_tex,
+                    .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
                     0,
                     rl.WHITE,
                 );
-                rl.DrawCircleV(mouse_pos, 10, rl.WHITE);
 
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    try map.tiles.put(
-                        .{
-                            .x = @intFromFloat(mouse_pos.x),
-                            .y = @intFromFloat(mouse_pos.y),
-                        },
-                        active_tile_type,
-                    );
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                    self.start_pos = mouse_pos;
+                }
+
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
+                    self.end_pos = mouse_pos;
+
+                    const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
+                    const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
+                    const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
+                    const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+
+                    var y: usize = min_y;
+                    while (y <= max_y) : (y += g.TILE_SIZE) {
+                        var x: usize = min_x;
+                        while (x <= max_x) : (x += g.TILE_SIZE) {
+                            rl.DrawTexturePro(
+                                tileset_texture,
+                                curr_tex,
+                                .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                                .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                                0,
+                                g.SEMI_TRANSPARENT,
+                            );
+                        }
+                    }
+                }
+
+                if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
+                    std.debug.print("mouse left button released: {}, {}\n", .{ mouse_pos.x, mouse_pos.y });
+                    const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
+                    const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
+                    const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
+                    const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+
+                    var y: usize = min_y;
+                    while (y <= max_y) : (y += g.TILE_SIZE) {
+                        var x: usize = min_x;
+                        while (x <= max_x) : (x += g.TILE_SIZE) {
+                            try map.tiles.put(.{ .x = @intCast(x), .y = @intCast(y) }, active_tile_type);
+                        }
+                    }
+
+                    self.start_pos = null;
+                    self.end_pos = null;
                 }
             }
         },
@@ -398,7 +433,7 @@ pub fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
                     tileset_texture,
                     def,
                     .{ .x = button_x + 5, .y = button_y + 5, .width = 40, .height = 40 },
-                    rl.Vector2{ .x = 0, .y = 0 },
+                    .{ .x = 0, .y = 0 },
                     0,
                     rl.WHITE,
                 );
