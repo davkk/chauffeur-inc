@@ -112,6 +112,10 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
             self.curr_node = next_idx;
             self.next_node = null;
 
+            if (self.next_action == .left or self.next_action == .right) {
+                self.speed *= 0.6;
+            }
+
             if (self.next_action) |next_action| {
                 switch (next_action) {
                     .left => {
@@ -133,22 +137,18 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
                 self.next_action = null;
             }
 
-            if (!self.is_player) {
-                // TODO: this will be changed when I implement path finding for ai cars
-                const action = std.crypto.random.enumValue(Action);
-                if (findNextNode(target.pos, self.angle, next_idx, map)) |next_next_idx| {
-                    self.next_action = action;
-                    self.next_node = next_next_idx;
-                } else {
-                    self.vel = rl.Vector2Zero();
-                    self.speed = 0;
-                    self.pos = rl.Vector2{ .x = -1000, .y = -1000 };
-                }
-            }
-
-            if (self.next_action == .left or self.next_action == .right) {
-                self.speed *= 0.6;
-            }
+            // if (!self.is_player) {
+            //     // TODO: this will be changed when I implement path finding for ai cars
+            //     const action = std.crypto.random.enumValue(Action);
+            //     if (findNextNode(target.pos, self.angle, next_idx, map)) |next_next_idx| {
+            //         self.next_action = action;
+            //         self.next_node = next_next_idx;
+            //     } else {
+            //         self.vel = rl.Vector2Zero();
+            //         self.speed = 0;
+            //         self.pos = rl.Vector2{ .x = -1000, .y = -1000 };
+            //     }
+            // }
 
             return;
         }

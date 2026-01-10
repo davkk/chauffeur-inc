@@ -12,12 +12,13 @@ pub const FRICTION = 200;
 pub const MAX_SPEED = 300;
 
 pub const TILES = [_]rl.Rectangle{
+    .{ .x = 2 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
     .{ .x = 3 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
 };
 
-pub const COLLIDABLES = [_]rl.Rectangle{};
+pub const SPRITES = [_]rl.Rectangle{};
 
-pub const TILE_DEFINITIONS = TILES ++ COLLIDABLES;
+pub const TILE_DEFINITIONS = TILES ++ SPRITES;
 
 pub const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
 

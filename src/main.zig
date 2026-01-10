@@ -59,18 +59,23 @@ pub fn main() !void {
 
         switch (mode) {
             .game => {
-                camera.zoom = 2;
                 const time = rl.GetFrameTime();
 
                 player.update(time, &map);
 
+                camera.zoom = 2;
+
                 const view_half_x = (g.SCREEN_WIDTH / 2) / camera.zoom;
                 const view_half_y = (g.SCREEN_HEIGHT / 2) / camera.zoom;
-                const desired_target = rl.Vector2{
-                    .x = math.clamp(player.pos.x, view_half_x, g.SCREEN_WIDTH - view_half_x),
-                    .y = math.clamp(player.pos.y, view_half_y, g.SCREEN_HEIGHT - view_half_y),
-                };
-                camera.target = rl.Vector2Lerp(camera.target, desired_target, 0.2);
+                camera.target = rl.Vector2Lerp(
+                    camera.target,
+                    .{
+                        .x = math.clamp(player.pos.x, view_half_x, g.SCREEN_WIDTH - view_half_x),
+                        .y = math.clamp(player.pos.y, view_half_y, g.SCREEN_HEIGHT - view_half_y),
+                    },
+                    0.2,
+                );
+
                 // for (cars.items) |*car| {
                 //     car.update(time, &map);
                 // }
@@ -105,29 +110,5 @@ pub fn main() !void {
             },
         }
         rl.EndDrawing();
-
-        // for (map.collidables.items) |collidable| {
-        //     const result = collision.collide(
-        //         &car.rect(),
-        //         car.angle,
-        //         &collidable.rect(),
-        //         0,
-        //     );
-        //
-        //     if (result) |res| {
-        //         const push = rl.Vector2Scale(res.normal, -res.depth);
-        //         car.pos = rl.Vector2Add(car.pos, push);
-        //
-        //         const tangent = rl.Vector2{ .x = res.normal.y, .y = -res.normal.x };
-        //
-        //         const num = -g.ELASTICITY * rl.Vector2DotProduct(rl.Vector2Subtract(car.vel, rl.Vector2Zero()), res.normal);
-        //         const den_lin = 1 / car.mass;
-        //         const den_ang = rl.Vector2DotProduct(res.normal, rl.Vector2Scale(tangent, 1 / car.inertia));
-        //         const impulse = num / (den_lin + den_ang);
-        //
-        //         car.vel = rl.Vector2Add(car.vel, rl.Vector2Scale(res.normal, impulse / car.mass));
-        //         car.angular_vel += tangent.x * impulse / car.inertia;
-        //     }
-        // }
     }
 }

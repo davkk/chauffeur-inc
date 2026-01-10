@@ -18,7 +18,7 @@ pub const TextureGroupType = enum {
     none,
     tiles,
     road,
-    collidables,
+    sprites,
 };
 
 const TextureGroup = struct {
@@ -28,7 +28,7 @@ const TextureGroup = struct {
 
 const GROUPS = [_]TextureGroup{
     .{ .type = .tiles, .tiles = g.TILES[0..] },
-    .{ .type = .collidables, .tiles = g.COLLIDABLES[0..] },
+    .{ .type = .sprites, .tiles = g.SPRITES[0..] },
 };
 
 pub const State = enum {
@@ -76,14 +76,15 @@ fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *M
     return null;
 }
 
-fn hoveredTile(mouse_pos: rl.Vector2, tiles: Map.TileMap) ?*Map.TilePosition {
-    var tile_iter = tiles.iterator();
-    while (tile_iter.next()) |entry| {
-        const tile_pos = entry.key_ptr;
-        const mx: i32 = @intFromFloat(mouse_pos.x);
-        const my: i32 = @intFromFloat(mouse_pos.y);
-        if (mx == tile_pos.x and my == tile_pos.y) {
-            return tile_pos;
+fn hoveredTile(mouse_pos: rl.Vector2, tiles: Map.TileMap) ?usize {
+    const mx: i32 = @intFromFloat(mouse_pos.x);
+    const my: i32 = @intFromFloat(mouse_pos.y);
+    const col = @as(usize, @intCast(@divFloor(mx, g.TILE_SIZE)));
+    const row = @as(usize, @intCast(@divFloor(my, g.TILE_SIZE)));
+    if (row < tiles.len and col < tiles[0].len) {
+        const tile_id = tiles[row][col];
+        if (tile_id != 0) {
+            return tile_id;
         }
     }
     return null;
@@ -235,11 +236,10 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
                     if (node1.edges.count() == 0) node1.active = false;
                     if (node2.edges.count() == 0) node2.active = false;
                 }
-            } else if (hoveredTile(mouse_pos, map.tiles)) |tile_pos| {
-                rl.DrawRectanglePro(.{ .x = @floatFromInt(tile_pos.x), .y = @floatFromInt(tile_pos.y), .width = g.TILE_SIZE, .height = g.TILE_SIZE }, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    map.tiles.removeByPtr(tile_pos);
-                }
+            } else if (hoveredTile(mouse_pos, map.tiles)) |tile_id| {
+                const tile = g.TILE_DEFINITIONS[tile_id];
+                rl.DrawRectanglePro(tile, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
+                // TODO: remove tile
             }
         },
         .add_node => {
@@ -314,8 +314,8 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
         .fill => {
             // TODO: make it so that when selected it turns into .fill mode
             rl.DrawRectanglePro(.{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE }, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
-            if (self.active_tile_type) |active_tile_type| {
-                const curr_tex = g.TILE_DEFINITIONS[active_tile_type];
+            if (self.active_tile_type) |active_tile_id| {
+                const curr_tex = g.TILE_DEFINITIONS[active_tile_id];
                 rl.DrawTexturePro(
                     tileset_texture,
                     curr_tex,
@@ -329,6 +329,7 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
                     self.start_pos = mouse_pos;
                 }
 
+                // FIXME: refactor that, make it dry
                 if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
                     self.end_pos = mouse_pos;
 
@@ -354,7 +355,6 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
                 }
 
                 if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
-                    std.debug.print("mouse left button released: {}, {}\n", .{ mouse_pos.x, mouse_pos.y });
                     const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
                     const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
                     const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
@@ -364,7 +364,11 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
                     while (y <= max_y) : (y += g.TILE_SIZE) {
                         var x: usize = min_x;
                         while (x <= max_x) : (x += g.TILE_SIZE) {
-                            try map.tiles.put(.{ .x = @intCast(x), .y = @intCast(y) }, active_tile_type);
+                            const row = y / g.TILE_SIZE;
+                            const col = x / g.TILE_SIZE;
+                            if (row < map.tiles.len and col < map.tiles[0].len) {
+                                map.tiles[row][col] = active_tile_id;
+                            }
                         }
                     }
 

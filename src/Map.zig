@@ -7,10 +7,9 @@ const g = @import("globals.zig");
 const TextureGroupType = @import("Editor.zig").TextureGroupType;
 const Tileset = @import("Tileset.zig");
 
-const FILE_NAME = "src/assets/map.dat";
+const FILE_NAME = "src/assets/map.map";
 
-pub const TilePosition = struct { x: i32, y: i32 };
-pub const TileMap = std.AutoHashMap(TilePosition, usize);
+pub const TileMap = [g.SCREEN_HEIGHT / g.TILE_SIZE][g.SCREEN_WIDTH / g.TILE_SIZE]usize;
 
 pub const Node = struct {
     pos: rl.Vector2,
@@ -62,14 +61,14 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     });
     road_texture[2] = rl.LoadTextureFromImage(node_image);
 
-    const nodes = try loadFromFile(alloc);
+    const loaded = try loadFromFile(alloc);
 
     return .{
         .alloc = alloc,
         .tileset = tileset,
         .road_texture = road_texture,
-        .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, nodes),
-        .tiles = TileMap.init(alloc),
+        .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
+        .tiles = loaded.tiles,
     };
 }
 
@@ -92,24 +91,25 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
     const road_color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
 
     // draw tiles
-    var tile_iter = self.tiles.iterator();
-    while (tile_iter.next()) |entry| {
-        const tile_pos = entry.key_ptr.*;
-        const tile_index = entry.value_ptr.*;
-        const rect = g.TILE_DEFINITIONS[tile_index];
-        rl.DrawTexturePro(
-            self.tileset.texture,
-            rect,
-            .{
-                .x = @floatFromInt(tile_pos.x),
-                .y = @floatFromInt(tile_pos.y),
-                .width = g.TILE_SIZE,
-                .height = g.TILE_SIZE,
-            },
-            .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-            0,
-            tile_color,
-        );
+    for (0..self.tiles.len) |tile_y| {
+        for (0..self.tiles[0].len) |tile_x| {
+            const tile_id = self.tiles[tile_y][tile_x];
+            if (tile_id == 0) continue;
+            const rect = g.TILE_DEFINITIONS[tile_id];
+            rl.DrawTexturePro(
+                self.tileset.texture,
+                rect,
+                .{
+                    .x = @floatFromInt(tile_x * g.TILE_SIZE),
+                    .y = @floatFromInt(tile_y * g.TILE_SIZE),
+                    .width = g.TILE_SIZE,
+                    .height = g.TILE_SIZE,
+                },
+                .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                0,
+                tile_color,
+            );
+        }
     }
 
     // draw nodes
@@ -178,38 +178,84 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
         }
     }
 
-    // TODO: draw collidables
+    // TODO: draw sprites
 }
 
-fn loadFromFile(alloc: std.mem.Allocator) ![]Node {
+fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMap } {
     var nodes = std.array_list.Managed(Node).init(alloc);
+    var tiles: TileMap = std.mem.zeroes(TileMap);
 
     const file = try std.fs.cwd().openFile(FILE_NAME, .{});
     defer file.close();
 
-    var line_buf: [1024]u8 = undefined; // TODO: buffer size?
+    var line_buf: [1024]u8 = undefined;
     var reader = file.reader(&line_buf);
 
-    while (try reader.interface.takeDelimiter('\n')) |line| {
-        var iter = std.mem.splitSequence(u8, line, " ");
-        const node_head = iter.next();
+    var section: enum { header, tiles, roads, sprites } = .header;
+    var section_row: usize = 0;
 
-        var node_iter = std.mem.splitSequence(u8, node_head.?, ";");
+    while (try reader.interface.takeDelimiter('\n')) |line_trimmed| {
+        const line = std.mem.trim(u8, line_trimmed, " \t\r\n");
+        if (line.len == 0) continue;
 
-        const id = try std.fmt.parseInt(usize, node_iter.next().?, 10);
-        const x = try std.fmt.parseFloat(f32, node_iter.next().?);
-        const y = try std.fmt.parseFloat(f32, node_iter.next().?);
+        if (std.mem.startsWith(u8, line, "[")) {
+            if (std.mem.eql(u8, line, "[tiles]")) {
+                section = .tiles;
+                section_row = 0;
+            } else if (std.mem.eql(u8, line, "[roads]")) {
+                section = .roads;
+            } else if (std.mem.eql(u8, line, "[sprites]")) {
+                section = .sprites;
+            }
+            continue;
+        }
 
-        try nodes.append(Node.init(alloc, .{ .x = x, .y = y }, id));
-        const node = &nodes.items[nodes.items.len - 1];
+        switch (section) {
+            .header => {
+                // skip header for now
+                continue;
+            },
+            .tiles => {
+                var row_iter = std.mem.splitSequence(u8, line, ",");
+                var col: usize = 0;
+                while (row_iter.next()) |tile_str| {
+                    const tile_id = try std.fmt.parseInt(usize, std.mem.trim(u8, tile_str, " "), 10);
+                    if (col < tiles[0].len) {
+                        tiles[section_row][col] = tile_id;
+                    }
+                    col += 1;
+                }
+                section_row += 1;
+            },
+            .roads => {
+                var iter = std.mem.splitSequence(u8, line, " ");
+                const node_head = iter.next() orelse continue;
 
-        while (iter.next()) |edge| {
-            const edge_id = try std.fmt.parseInt(usize, std.mem.trim(u8, edge, "\n"), 10);
-            try node.edges.put(edge_id, {});
+                var node_iter = std.mem.splitSequence(u8, node_head, ";");
+
+                const id_str = node_iter.next() orelse continue;
+                const x_str = node_iter.next() orelse continue;
+                const y_str = node_iter.next() orelse continue;
+
+                const id = try std.fmt.parseInt(usize, id_str, 10);
+                const x = try std.fmt.parseFloat(f32, x_str);
+                const y = try std.fmt.parseFloat(f32, y_str);
+
+                try nodes.append(Node.init(alloc, .{ .x = x, .y = y }, id));
+                const node = &nodes.items[nodes.items.len - 1];
+
+                while (iter.next()) |edge| {
+                    const edge_id = try std.fmt.parseInt(usize, std.mem.trim(u8, edge, "\n"), 10);
+                    try node.edges.put(edge_id, {});
+                }
+            },
+            .sprites => {
+                // TODO: add sprites
+            },
         }
     }
 
-    return nodes.toOwnedSlice();
+    return .{ .nodes = try nodes.toOwnedSlice(), .tiles = tiles };
 }
 
 fn normalizeIds(self: *Self, nodes: []Node) ![]Node {
@@ -245,6 +291,22 @@ pub fn saveToFile(self: *Self) !void {
     var buffer: [1024]u8 = undefined;
     var writer = file.writer(&buffer);
 
+    try writer.interface.print("version=1\n", .{});
+    try writer.interface.print("\n", .{});
+
+    // tiles
+    try writer.interface.print("[tiles]\n", .{});
+    for (0..self.tiles.len) |tile_y| {
+        for (0..self.tiles[tile_y].len) |tile_x| {
+            if (tile_x > 0) try writer.interface.print(",", .{});
+            try writer.interface.print("{d}", .{self.tiles[tile_y][tile_x]});
+        }
+        try writer.interface.print("\n", .{});
+    }
+    try writer.interface.print("\n", .{});
+
+    // roads
+    try writer.interface.print("[roads]\n", .{});
     const normalized_nodes = try self.normalizeIds(self.nodes.items);
     defer self.alloc.free(normalized_nodes);
 
@@ -257,6 +319,10 @@ pub fn saveToFile(self: *Self) !void {
         }
         try writer.interface.print("\n", .{});
     }
+    try writer.interface.print("\n", .{});
+
+    // sprites
+    try writer.interface.print("[sprites]\n", .{});
 
     writer.interface.flush() catch {
         std.debug.print("Error flushing buffered writer", .{});
