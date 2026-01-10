@@ -24,7 +24,8 @@ pub fn main() !void {
     const alloc = arena.allocator();
 
     var camera = rl.Camera2D{
-        .target = rl.Vector2{ .x = 0, .y = 0 },
+        .target = .{ .x = 0, .y = 0 },
+        .offset = .{ .x = g.SCREEN_WIDTH / 2, .y = g.SCREEN_HEIGHT / 2 },
         .zoom = 2,
     };
 
@@ -37,12 +38,12 @@ pub fn main() !void {
     player.curr_node = init_node.id;
     defer player.deinit();
 
-    var cars = std.array_list.Managed(Car).init(alloc);
-    for (0..3) |_| {
-        var car = Car.init(false, init_node.pos.x, init_node.pos.y, math.pi / 2.0);
-        car.curr_node = init_node.id;
-        try cars.append(car);
-    }
+    // var cars = std.array_list.Managed(Car).init(alloc);
+    // for (0..3) |_| {
+    //     var car = Car.init(false, init_node.pos.x, init_node.pos.y, math.pi / 2.0);
+    //     car.curr_node = init_node.id;
+    //     try cars.append(car);
+    // }
 
     var editor = Editor.init();
 
@@ -58,21 +59,30 @@ pub fn main() !void {
 
         switch (mode) {
             .game => {
+                camera.zoom = 2;
                 const time = rl.GetFrameTime();
 
                 player.update(time, &map);
-                for (cars.items) |*car| {
-                    car.update(time, &map);
-                }
+
+                const view_half_x = (g.SCREEN_WIDTH / 2) / camera.zoom;
+                const view_half_y = (g.SCREEN_HEIGHT / 2) / camera.zoom;
+                const desired_target = rl.Vector2{
+                    .x = math.clamp(player.pos.x, view_half_x, g.SCREEN_WIDTH - view_half_x),
+                    .y = math.clamp(player.pos.y, view_half_y, g.SCREEN_HEIGHT - view_half_y),
+                };
+                camera.target = rl.Vector2Lerp(camera.target, desired_target, 0.2);
+                // for (cars.items) |*car| {
+                //     car.update(time, &map);
+                // }
 
                 rl.BeginMode2D(camera);
                 {
                     map.draw(.none);
 
                     player.draw();
-                    for (cars.items) |*car| {
-                        car.draw();
-                    }
+                    // for (cars.items) |*car| {
+                    //     car.draw();
+                    // }
 
                     if (player.next_node) |target_index| {
                         const target = map.nodes.items[target_index];

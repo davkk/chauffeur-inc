@@ -83,6 +83,7 @@ pub fn deinit(self: *const Self) void {
     self.nodes.deinit();
 }
 
+// TODO: I hate that I pass active group here...
 pub fn draw(self: *Self, active_group: TextureGroupType) void {
     rl.ClearBackground(rl.BLUE);
     rl.DrawRectangle(0, 0, math.maxInt(c_int), math.maxInt(c_int), rl.BLACK);
