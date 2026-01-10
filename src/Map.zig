@@ -4,24 +4,13 @@ const math = std.math;
 const rl = @import("raylib.zig").rl;
 const g = @import("globals.zig");
 
+const TextureGroupType = @import("Editor.zig").TextureGroupType;
 const Tileset = @import("Tileset.zig");
 
 const FILE_NAME = "src/assets/map.dat";
 
-pub const TileType = enum {
-    pavement,
-    grass,
-    water,
-};
-
-pub const Tile = struct {
-    tile_type: TileType,
-    x: i32,
-    y: i32,
-};
-
 pub const TilePosition = struct { x: i32, y: i32 };
-pub const TileMap = std.AutoHashMap(TilePosition, TileType);
+pub const TileMap = std.AutoHashMap(TilePosition, usize);
 
 pub const Node = struct {
     pos: rl.Vector2,
@@ -43,7 +32,7 @@ const Self = @This();
 
 alloc: std.mem.Allocator,
 
-road_texture: rl.Texture2D,
+road_texture: [2]rl.Texture2D,
 tileset: Tileset,
 
 nodes: std.array_list.Managed(Node),
@@ -55,10 +44,12 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     var road = rl.LoadImageFromTexture(tileset.texture);
     rl.ImageCrop(&road, .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = g.TILE_SIZE });
 
-    const road_texture = rl.LoadTextureFromImage(road);
-    rl.SetTextureWrap(road_texture, rl.TEXTURE_WRAP_REPEAT);
+    var node = rl.LoadImageFromTexture(tileset.texture);
+    rl.ImageCrop(&node, .{ .x = 2 * g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE });
 
     const nodes = try loadFromFile(alloc);
+
+    const road_texture = [2]rl.Texture2D{ rl.LoadTextureFromImage(road), rl.LoadTextureFromImage(node) };
 
     return .{
         .alloc = alloc,
@@ -70,7 +61,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
 }
 
 pub fn deinit(self: *const Self) void {
-    rl.UnloadTexture(self.road_texture);
+    for (self.road_texture) |road| rl.UnloadTexture(road);
     rl.UnloadTexture(self.tileset.texture);
 
     for (self.nodes.items) |*node| {
@@ -79,7 +70,9 @@ pub fn deinit(self: *const Self) void {
     self.nodes.deinit();
 }
 
-pub fn draw(self: *Self) void {
+const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
+
+pub fn draw(self: *Self, active_group: TextureGroupType) void {
     rl.ClearBackground(rl.BLUE);
     rl.DrawRectangle(0, 0, math.maxInt(c_int), math.maxInt(c_int), rl.BLACK);
 
@@ -87,48 +80,21 @@ pub fn draw(self: *Self) void {
     var tile_iter = self.tiles.iterator();
     while (tile_iter.next()) |entry| {
         const tile_pos = entry.key_ptr.*;
-        const tile_type = entry.value_ptr.*;
-        switch (tile_type) {
-            .pavement => {
-                rl.DrawRectanglePro(
-                    .{
-                        .x = @floatFromInt(tile_pos.x),
-                        .y = @floatFromInt(tile_pos.y),
-                        .width = 2 * g.TILE_SIZE,
-                        .height = 2 * g.TILE_SIZE,
-                    },
-                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
-                    0,
-                    rl.LIGHTGRAY,
-                );
+        const tile_index = entry.value_ptr.*;
+        const rect = g.TILE_DEFINITIONS[tile_index];
+        rl.DrawTexturePro(
+            self.tileset.texture,
+            rect,
+            .{
+                .x = @floatFromInt(tile_pos.x),
+                .y = @floatFromInt(tile_pos.y),
+                .width = 2 * g.TILE_SIZE,
+                .height = 2 * g.TILE_SIZE,
             },
-            .grass => {
-                rl.DrawRectanglePro(
-                    .{
-                        .x = @floatFromInt(tile_pos.x),
-                        .y = @floatFromInt(tile_pos.y),
-                        .width = 2 * g.TILE_SIZE,
-                        .height = 2 * g.TILE_SIZE,
-                    },
-                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
-                    0,
-                    rl.GREEN,
-                );
-            },
-            .water => {
-                rl.DrawRectanglePro(
-                    .{
-                        .x = @floatFromInt(tile_pos.x),
-                        .y = @floatFromInt(tile_pos.y),
-                        .width = 2 * g.TILE_SIZE,
-                        .height = 2 * g.TILE_SIZE,
-                    },
-                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
-                    0,
-                    rl.BLUE,
-                );
-            },
-        }
+            .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+            0,
+            if (active_group == .none or active_group == .tiles) rl.WHITE else SEMI_TRANSPARENT,
+        );
     }
 
     // draw edges
@@ -149,12 +115,12 @@ pub fn draw(self: *Self) void {
             const length = @sqrt(dx * dx + dy * dy);
 
             rl.DrawTexturePro(
-                self.road_texture,
+                self.road_texture[0],
                 .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = length },
                 .{ .x = mid_x, .y = mid_y, .width = 2 * g.TILE_SIZE, .height = length },
                 .{ .x = g.TILE_SIZE, .y = length / 2 },
                 angle,
-                rl.WHITE,
+                if (active_group == .none or active_group == .road) rl.WHITE else SEMI_TRANSPARENT,
             );
         }
     }
@@ -162,7 +128,16 @@ pub fn draw(self: *Self) void {
     // draw nodes
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
-        rl.DrawCircleV(node1.pos, g.TILE_SIZE, rl.DARKGRAY);
+        const color = if (active_group == .none or active_group == .road) rl.WHITE else SEMI_TRANSPARENT;
+
+        rl.DrawTexturePro(
+            self.road_texture[1],
+            .{ .x = 0, .y = 0, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+            .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
+            .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+            0,
+            color,
+        );
 
         // draw lines
         for (node1.edges.keys()) |edge| {
@@ -175,10 +150,12 @@ pub fn draw(self: *Self) void {
                 rl.Vector2Add(node1.pos, rl.Vector2Scale(dir, g.TILE_SIZE / 2)),
                 rl.Vector2Add(node1.pos, rl.Vector2Scale(dir, g.TILE_SIZE)),
                 2.0,
-                rl.WHITE,
+                color,
             );
         }
     }
+
+    // TODO: draw collidables
 }
 
 fn loadFromFile(alloc: std.mem.Allocator) ![]Node {

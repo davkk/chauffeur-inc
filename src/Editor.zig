@@ -1,6 +1,5 @@
 const std = @import("std");
 const math = std.math;
-const json = std.json;
 
 const rl = @import("raylib.zig").rl;
 const g = @import("globals.zig");
@@ -15,6 +14,23 @@ const ACTIVE_COLOR = rl.WHITE;
 const BAD_COLOR = rl.RED;
 const INACTIVE_COLOR = rl.GRAY;
 
+pub const TextureGroupType = enum {
+    none,
+    tiles,
+    road,
+    collidables,
+};
+
+const TextureGroup = struct {
+    type: TextureGroupType,
+    tiles: []const rl.Rectangle,
+};
+
+const GROUPS = [_]TextureGroup{
+    .{ .type = .tiles, .tiles = g.TILES[0..] },
+    .{ .type = .collidables, .tiles = g.COLLIDABLES[0..] },
+};
+
 pub const State = enum {
     idle,
     eraser,
@@ -25,8 +41,10 @@ pub const State = enum {
 const Self = @This();
 
 state: State,
-active_tile_type: Map.TileType,
+active_tile_type: ?usize,
 active_node_id: ?usize,
+active_group: TextureGroupType,
+group_expanded: [3]bool,
 
 fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
     for (nodes) |*node| {
@@ -85,11 +103,13 @@ pub fn init() Self {
     return .{
         .state = .idle,
         .active_node_id = null,
-        .active_tile_type = .pavement,
+        .active_tile_type = null,
+        .active_group = .none,
+        .group_expanded = [_]bool{ true, true, true },
     };
 }
 
-pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *Map) !void {
+pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     const wheel = rl.GetMouseWheelMove();
     if (wheel != 0) {
         camera.zoom += wheel * 0.1;
@@ -148,7 +168,9 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
     if (!KEY_SHIFT and KEY_CTRL and rl.IsKeyPressed(rl.KEY_S)) { // save
         try map.saveToFile();
     }
+}
 
+pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D) !void {
     // draw grid
     const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
     const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
@@ -168,26 +190,14 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
         rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
     }
 
-    const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
+    const mouse_screen_pos = rl.GetMousePosition();
+    const sidebar_rect = rl.Rectangle{ .x = g.SCREEN_WIDTH - 200, .y = 0, .width = 200, .height = g.SCREEN_HEIGHT };
+    const mouse_over_ui = rl.CheckCollisionPointRec(mouse_screen_pos, sidebar_rect);
+
+    const mouse_world_pos = rl.GetScreenToWorld2D(mouse_screen_pos, camera.*);
     const mouse_pos = snapToGrid(mouse_world_pos);
 
-    map.draw();
-
-    var tile_iter = map.tiles.iterator();
-    while (tile_iter.next()) |entry| {
-        const tile = entry.key_ptr.*;
-        rl.DrawRectanglePro(
-            .{
-                .x = @floatFromInt(tile.x),
-                .y = @floatFromInt(tile.y),
-                .width = 10,
-                .height = 10,
-            },
-            .{ .x = 5, .y = 5 },
-            0,
-            rl.WHITE,
-        );
-    }
+    map.draw(self.active_group);
 
     switch (self.state) {
         .idle => {},
@@ -195,7 +205,7 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             self.active_node_id = null;
             if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
                 rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     node1.active = false;
                     for (map.nodes.items) |*node| {
                         if (node.active) {
@@ -214,7 +224,7 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             } else if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
                 const node1, const node2 = edge;
                 rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     _ = node1.edges.swapRemove(node2.id);
                     _ = node2.edges.swapRemove(node1.id);
                     if (node1.edges.count() == 0) node1.active = false;
@@ -229,7 +239,7 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                     10,
                     ACTIVE_COLOR,
                 );
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     map.tiles.removeByPtr(tile_pos);
                 }
             }
@@ -259,7 +269,7 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                     rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                 }
 
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].pos, target_pos)) {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].pos, target_pos) and !mouse_over_ui) {
                     if (!found) {
                         try map.nodes.append(Map.Node.init(alloc, mouse_pos, map.nodes.items.len));
                         new_node = &map.nodes.items[map.nodes.items.len - 1];
@@ -280,12 +290,12 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
                 }
             } else if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
                 rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     self.active_node_id = node1.id;
                 }
             } else {
                 rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     const new_node = Map.Node.init(alloc, mouse_pos, map.nodes.items.len);
                     try map.nodes.append(new_node);
                     const new_node_ptr = &map.nodes.items[map.nodes.items.len - 1];
@@ -304,36 +314,105 @@ pub fn draw(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *M
             }
         },
         .fill => {
-            const tile_color = switch (self.active_tile_type) {
-                .grass => rl.GREEN,
-                .water => rl.BLUE,
-                .pavement => rl.LIGHTGRAY,
-            };
-            rl.DrawRectanglePro(
-                .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
-                .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
-                0,
-                tile_color,
-            );
-            rl.DrawCircleV(mouse_pos, 10, rl.WHITE);
-
-            if (rl.IsKeyPressed(rl.KEY_ONE)) {
-                self.active_tile_type = .pavement;
-            } else if (rl.IsKeyPressed(rl.KEY_TWO)) {
-                self.active_tile_type = .grass;
-            } else if (rl.IsKeyPressed(rl.KEY_THREE)) {
-                self.active_tile_type = .water;
-            }
-
-            if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
-                try map.tiles.put(
-                    .{
-                        .x = @intFromFloat(mouse_pos.x),
-                        .y = @intFromFloat(mouse_pos.y),
-                    },
-                    self.active_tile_type,
+            // TODO: make it so that when selected it turns into .fill mode
+            if (self.active_tile_type) |active_tile_type| {
+                const def = g.TILE_DEFINITIONS[active_tile_type];
+                rl.DrawTexturePro(
+                    tileset_texture,
+                    def,
+                    .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
+                    .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+                    0,
+                    rl.WHITE,
                 );
+                rl.DrawCircleV(mouse_pos, 10, rl.WHITE);
+
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+                    try map.tiles.put(
+                        .{
+                            .x = @intFromFloat(mouse_pos.x),
+                            .y = @intFromFloat(mouse_pos.y),
+                        },
+                        active_tile_type,
+                    );
+                }
             }
         },
+    }
+}
+
+pub fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
+    const sidebar_x = g.SCREEN_WIDTH - 200;
+    const sidebar_y = 0;
+
+    const sidebar_width = 200;
+    const sidebar_height = g.SCREEN_HEIGHT;
+
+    _ = rl.GuiPanel(
+        .{ .x = sidebar_x, .y = sidebar_y, .width = sidebar_width, .height = sidebar_height },
+        "Texture Selector",
+    );
+
+    var y_offset: f32 = 30;
+
+    const mouse_screen_pos = rl.GetMousePosition();
+    const cols = 3;
+    var label_buf: [64]u8 = undefined;
+
+    for (GROUPS, 0..) |group, group_idx| {
+        const header_rect = rl.Rectangle{
+            .x = sidebar_x + 10,
+            .y = sidebar_y + y_offset,
+            .width = sidebar_width - 20,
+            .height = 20,
+        };
+
+        const arrow = if (self.group_expanded[group_idx]) "v" else ">";
+        const label = std.fmt.bufPrintZ(&label_buf, "{} {s}", .{ group.type, arrow }) catch "error";
+        if (rl.GuiButton(header_rect, label) == 1) {
+            self.group_expanded[group_idx] = !self.group_expanded[group_idx];
+        }
+        y_offset += 25;
+
+        if (self.group_expanded[group_idx]) {
+            const rows = (group.tiles.len + cols - 1) / cols;
+            for (group.tiles, 0..) |def, tile_i| {
+                const global_i = switch (group_idx) {
+                    0 => tile_i,
+                    1 => g.TILES.len + tile_i,
+                    else => 0,
+                };
+
+                const row = tile_i / cols;
+                const col = tile_i % cols;
+
+                const button_x = sidebar_x + 10 + @as(f32, @floatFromInt(col)) * 60;
+                const button_y = sidebar_y + y_offset + @as(f32, @floatFromInt(row)) * 60;
+
+                const button_rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = 50, .height = 50 };
+
+                const is_hovered = rl.CheckCollisionPointRec(mouse_screen_pos, button_rect);
+
+                // thumbnail
+                rl.DrawTexturePro(
+                    tileset_texture,
+                    def,
+                    .{ .x = button_x + 5, .y = button_y + 5, .width = 40, .height = 40 },
+                    rl.Vector2{ .x = 0, .y = 0 },
+                    0,
+                    rl.WHITE,
+                );
+
+                if (is_hovered and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                    self.active_tile_type = global_i;
+                    self.active_group = group.type;
+                }
+
+                if (self.active_tile_type == global_i) {
+                    rl.DrawRectangleLinesEx(button_rect, 2, rl.YELLOW);
+                }
+            }
+            y_offset += @as(f32, @floatFromInt(rows)) * 60 + 5;
+        }
     }
 }

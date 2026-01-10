@@ -67,7 +67,7 @@ pub fn main() !void {
 
                 rl.BeginMode2D(camera);
                 {
-                    map.draw();
+                    map.draw(.none);
 
                     player.draw();
                     for (cars.items) |*car| {
@@ -85,11 +85,13 @@ pub fn main() !void {
                 rl.DrawText(rl.TextFormat("pos: %.f, %.f", player.pos.x, player.pos.y), 10, 35, 20, rl.WHITE);
             },
             .editor => {
+                try editor.update(&camera, &map);
                 rl.BeginMode2D(camera);
                 {
-                    try editor.draw(alloc, &camera, &map);
+                    try editor.drawWorld(alloc, &camera, &map, map.tileset.texture);
                 }
                 rl.EndMode2D();
+                editor.drawGui(map.tileset.texture);
             },
         }
         rl.EndDrawing();
