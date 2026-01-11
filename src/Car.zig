@@ -81,8 +81,9 @@ fn findNextNode(pos: rl.Vector2, angle: f32, curr_index: usize, map: *const Map)
         .x = math.sin(angle),
         .y = -math.cos(angle),
     };
-    for (curr.edges.keys()) |edge_id| {
-        const node = &map.nodes.items[edge_id];
+    for (curr.edges) |edge_id| {
+        if (edge_id == null) continue;
+        const node = &map.nodes.items[edge_id.?];
         const dir = rl.Vector2Subtract(node.pos, pos);
         if (@floor(rl.Vector2DotProduct(forward, dir)) > 0) {
             return edge_id;

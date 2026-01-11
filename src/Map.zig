@@ -15,14 +15,14 @@ pub const Node = struct {
     pos: rl.Vector2,
     id: usize,
     active: bool = true,
-    edges: std.AutoArrayHashMap(usize, void),
+    edges: [4]?usize,
 
-    pub fn init(alloc: std.mem.Allocator, pos: rl.Vector2, id: usize) Node {
+    pub fn init(pos: rl.Vector2, id: usize) Node {
         return Node{
             .active = true,
             .pos = pos,
             .id = id,
-            .edges = std.AutoArrayHashMap(usize, void).init(alloc),
+            .edges = .{ null, null, null, null },
         };
     }
 };
@@ -76,9 +76,6 @@ pub fn deinit(self: *const Self) void {
     for (self.road_texture) |road| rl.UnloadTexture(road);
     rl.UnloadTexture(self.tileset.texture);
 
-    for (self.nodes.items) |*node| {
-        node.edges.deinit();
-    }
     self.nodes.deinit();
 }
 
@@ -128,8 +125,10 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
 
-        for (node1.edges.keys()) |edge| {
-            const node2 = &self.nodes.items[edge];
+        for (node1.edges) |edge_id| {
+            if (edge_id == null) continue;
+
+            const node2 = &self.nodes.items[edge_id.?];
             if (!node2.active or node1.id > node2.id) continue;
 
             const dx = @abs(@round(node1.pos.x - node2.pos.x));
@@ -238,12 +237,14 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMa
                 const x = try std.fmt.parseFloat(f32, x_str);
                 const y = try std.fmt.parseFloat(f32, y_str);
 
-                try nodes.append(Node.init(alloc, .{ .x = x, .y = y }, id));
+                try nodes.append(Node.init(.{ .x = x, .y = y }, id));
                 const node = &nodes.items[nodes.items.len - 1];
 
-                while (iter.next()) |edge| {
-                    const edge_id = try std.fmt.parseInt(usize, std.mem.trim(u8, edge, "\n"), 10);
-                    try node.edges.put(edge_id, {});
+                for (0..4) |idx| {
+                    if (iter.next()) |edge| {
+                        const edge_id = try std.fmt.parseInt(usize, std.mem.trim(u8, edge, "\n"), 10);
+                        node.edges[idx] = edge_id;
+                    }
                 }
             },
             .sprites => {
@@ -261,18 +262,19 @@ fn normalizeIds(self: *Self, nodes: []Node) ![]Node {
 
     var new_id: usize = 0;
     for (nodes) |node| {
-        if (!node.active or node.edges.count() == 0) continue;
+        if (!node.active) continue;
         try id_map.put(node.id, new_id);
         new_id += 1;
     }
 
     var new_nodes = std.array_list.Managed(Node).init(self.alloc);
     for (nodes) |*node| {
-        if (!node.active or node.edges.count() == 0) continue;
-        var new_node = Node.init(self.alloc, node.pos, id_map.get(node.id).?);
-        for (node.edges.keys()) |edge_id| {
-            if (id_map.get(edge_id)) |new_edge_id| {
-                try new_node.edges.put(new_edge_id, {});
+        if (!node.active) continue;
+        var new_node = Node.init(node.pos, id_map.get(node.id).?);
+        for (node.edges, 0..) |edge_id, idx| {
+            if (edge_id == null) continue;
+            if (id_map.get(edge_id.?)) |new_edge_id| {
+                new_node.edges[idx] = new_edge_id;
             }
         }
         try new_nodes.append(new_node);
@@ -311,8 +313,9 @@ pub fn saveToFile(self: *Self) !void {
         if (!node.active) continue;
 
         try writer.interface.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
-        for (node.edges.keys()) |edge| {
-            try writer.interface.print(" {d}", .{edge});
+        for (node.edges) |edge_id| {
+            if (edge_id == null) continue;
+            try writer.interface.print(" {d}", .{edge_id.?});
         }
         try writer.interface.print("\n", .{});
     }

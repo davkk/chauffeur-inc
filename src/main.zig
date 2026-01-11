@@ -103,7 +103,7 @@ pub fn main() !void {
                 try editor.update(&camera, &map);
                 rl.BeginMode2D(camera);
                 {
-                    try editor.drawWorld(alloc, &camera, &map, map.tileset.texture);
+                    try editor.drawWorld(&camera, &map, map.tileset.texture);
                 }
                 rl.EndMode2D();
                 editor.drawGui(map.tileset.texture);

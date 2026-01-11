@@ -38,6 +38,8 @@ pub const State = enum {
     fill,
 };
 
+const Direction = enum { top, right, bottom, left };
+
 const Self = @This();
 
 state: State,
@@ -50,6 +52,7 @@ start_pos: ?rl.Vector2,
 end_pos: ?rl.Vector2,
 
 fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
+    // TODO: use quad tree in the future, probably
     for (nodes) |*node| {
         if (!node.active) continue;
         if (rl.CheckCollisionPointCircle(mouse_pos, node.pos, 10)) {
@@ -62,10 +65,11 @@ fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
 fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *Map.Node } {
     for (nodes) |*node1| {
         if (!node1.active) continue;
-        for (node1.edges.keys()) |edge| {
-            if (node1.id > edge) continue;
+        for (node1.edges) |edge_id| {
+            if (edge_id == null) continue;
+            if (node1.id > edge_id.?) continue;
 
-            const node2 = &nodes[edge];
+            const node2 = &nodes[edge_id.?];
             if (!node2.active) continue;
 
             if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 10)) {
@@ -136,11 +140,6 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
         camera.zoom = @max(camera.zoom - 1.0, 1.0);
     } else if (!KEY_SHIFT and !KEY_CTRL) {
         if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
-            if (self.active_node_id) |node_id| {
-                if (map.nodes.items[node_id].edges.count() == 0) {
-                    map.nodes.items[node_id].active = false;
-                }
-            }
             self.active_node_id = null;
             self.active_group = .none;
             self.active_tile_type = null;
@@ -168,7 +167,15 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     }
 }
 
-pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D) !void {
+fn getDirection(dx: f32, dy: f32) ?Direction {
+    if (dy < 0) return .top;
+    if (dx > 0) return .right;
+    if (dy > 0) return .bottom;
+    if (dx < 0) return .left;
+    return null;
+}
+
+pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D) !void {
     // draw grid
     const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
     const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
@@ -203,104 +210,103 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
         .idle => {},
         .eraser => {
             self.active_node_id = null;
-            if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
-                rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    node1.active = false;
-                    for (map.nodes.items) |*node| {
-                        if (node.active) {
-                            _ = node.edges.swapRemove(node1.id);
-                        }
-                        if (node.edges.count() == 0) {
-                            node.active = false;
-                        }
-                    }
-                    if (self.active_node_id) |active| {
-                        if (active == node1.id) {
-                            self.active_node_id = null;
-                        }
-                    }
-                }
-            } else if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
-                const node1, const node2 = edge;
-                rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    _ = node1.edges.swapRemove(node2.id);
-                    _ = node2.edges.swapRemove(node1.id);
-                    if (node1.edges.count() == 0) node1.active = false;
-                    if (node2.edges.count() == 0) node2.active = false;
-                }
-            } else if (hoveredTile(mouse_pos, map.tiles)) |tile_id| {
-                const tile = g.TILE_DEFINITIONS[tile_id];
-                rl.DrawRectanglePro(tile, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
-                // TODO: remove tile
-            }
+
+            // if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
+            //     rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
+            //     if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+            //         node1.active = false;
+            //         for (map.nodes.items) |*node| {
+            //             if (node.active) {
+            //                 // _ = node.edges.swapRemove(node1.id);
+            //             }
+            //             // if (node.edges.count() == 0) {
+            //             //     node.active = false;
+            //             // }
+            //         }
+            //         if (self.active_node_id) |active| {
+            //             if (active == node1.id) {
+            //                 self.active_node_id = null;
+            //             }
+            //         }
+            //     }
+            // }
+
+            // if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
+            //     const node1, const node2 = edge;
+            //     rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
+            //     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+            //         // _ = node1.edges.swapRemove(node2.id);
+            //         // _ = node2.edges.swapRemove(node1.id);
+            //         // if (node1.edges.count() == 0) node1.active = false;
+            //         // if (node2.edges.count() == 0) node2.active = false;
+            //     }
+            // }
+
+            // if (hoveredTile(mouse_pos, map.tiles)) |tile_id| {
+            //     const tile = g.TILE_DEFINITIONS[tile_id];
+            //     rl.DrawRectanglePro(tile, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
+            //     // TODO: remove tile
+            // }
         },
         .add_node => {
-            if (self.active_node_id) |node_id| {
-                var new_node: *Map.Node = undefined;
-                var found = false; // TODO: why is there found flag?
+            if (self.active_node_id) |node_id| { // continue adding
+                var new_node: ?*Map.Node = null;
 
                 if (hoveredNode(mouse_pos, map.nodes.items)) |node2| {
+                    // connect to existing node
                     new_node = node2;
-                    found = true;
                 }
 
-                const target_pos = if (found) new_node.pos else mouse_pos;
+                const active_node = &map.nodes.items[node_id];
 
                 rl.DrawLineEx(
-                    map.nodes.items[node_id].pos,
-                    target_pos,
+                    active_node.pos,
+                    mouse_pos,
                     LINE_THICKNESS,
-                    if (isValidEdge(map.nodes.items[node_id].pos, target_pos)) ACTIVE_COLOR else BAD_COLOR,
+                    if (isValidEdge(active_node.pos, mouse_pos)) ACTIVE_COLOR else BAD_COLOR,
                 );
+                rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
 
-                if (found) {
-                    rl.DrawCircleV(new_node.pos, 10, ACTIVE_COLOR);
-                } else {
-                    rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
-                }
-
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(map.nodes.items[node_id].pos, target_pos) and !mouse_over_ui) {
-                    if (!found) {
-                        try map.nodes.append(Map.Node.init(alloc, mouse_pos, map.nodes.items.len));
+                if (!mouse_over_ui and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, mouse_pos)) {
+                    if (new_node == null) { // placing completely new node
+                        try map.nodes.append(Map.Node.init(mouse_pos, map.nodes.items.len));
                         new_node = &map.nodes.items[map.nodes.items.len - 1];
-                        if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
-                            const node_a = split_edge[0];
-                            const node_b = split_edge[1];
-                            _ = node_a.edges.swapRemove(node_b.id);
-                            _ = node_b.edges.swapRemove(node_a.id);
-                            try node_a.edges.put(new_node.id, {});
-                            try node_b.edges.put(new_node.id, {});
-                            try new_node.edges.put(node_a.id, {});
-                            try new_node.edges.put(node_b.id, {});
-                        }
                     }
-                    try new_node.edges.put(node_id, {});
-                    try map.nodes.items[node_id].edges.put(new_node.id, {});
-                    self.active_node_id = new_node.id;
+
+                    // figure out direction to node
+                    const dx = new_node.?.pos.x - active_node.pos.x;
+                    const dy = new_node.?.pos.y - active_node.pos.y;
+                    const direction = getDirection(dx, dy);
+
+                    if (direction) |dir| {
+                        const dir_idx: usize = @intFromEnum(dir);
+                        active_node.edges[dir_idx] = new_node.?.id;
+                        new_node.?.edges[(dir_idx + 2) % 4] = node_id;
+                    }
+
+                    self.active_node_id = new_node.?.id;
                 }
-            } else if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
+            } else if (hoveredNode(mouse_pos, map.nodes.items)) |node1| { // add to existing node
                 rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     self.active_node_id = node1.id;
                 }
-            } else {
+            } else { // default, add to map
                 rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    const new_node = Map.Node.init(alloc, mouse_pos, map.nodes.items.len);
+                    const new_node = Map.Node.init(mouse_pos, map.nodes.items.len);
                     try map.nodes.append(new_node);
                     const new_node_ptr = &map.nodes.items[map.nodes.items.len - 1];
-                    if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
-                        const node_a = split_edge[0];
-                        const node_b = split_edge[1];
-                        _ = node_a.edges.swapRemove(node_b.id);
-                        _ = node_b.edges.swapRemove(node_a.id);
-                        try node_a.edges.put(new_node_ptr.id, {});
-                        try node_b.edges.put(new_node_ptr.id, {});
-                        try new_node_ptr.edges.put(node_a.id, {});
-                        try new_node_ptr.edges.put(node_b.id, {});
-                    }
+                    // if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
+                    //     const node_a = split_edge[0];
+                    //     const node_b = split_edge[1];
+                    //     _ = node_a.edges.swapRemove(node_b.id);
+                    //     _ = node_b.edges.swapRemove(node_a.id);
+                    //     try node_a.edges.put(new_node_ptr.id, {});
+                    //     try node_b.edges.put(new_node_ptr.id, {});
+                    //     try new_node_ptr.edges.put(node_a.id, {});
+                    //     try new_node_ptr.edges.put(node_b.id, {});
+                    // }
                     self.active_node_id = new_node_ptr.id;
                 }
             }
