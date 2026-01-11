@@ -142,18 +142,10 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
                 }
             }
             self.active_node_id = null;
-        } else if (rl.IsKeyPressed(rl.KEY_P)) {
-            for (map.nodes.items) |*node| {
-                if (!node.active) continue;
-                std.debug.print("{}: ", .{node.id});
-                for (node.edges.keys()) |edge| {
-                    std.debug.print("{}, ", .{edge});
-                }
-                std.debug.print("\n", .{});
-            }
+            self.active_group = .none;
+            self.active_tile_type = null;
         } else if (rl.IsKeyPressed(rl.KEY_V)) {
             self.state = .idle;
-            self.active_group = .none;
         } else if (rl.IsKeyPressed(rl.KEY_E)) {
             self.state = .eraser;
         } else if (rl.IsKeyPressed(rl.KEY_N)) {
@@ -183,17 +175,19 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
     const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
     const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
 
-    var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE;
+    var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
     while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
         const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
         const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
-        rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
+        const thickness: f32 = if (grid_x == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
+        rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
     }
-    var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE;
+    var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
     while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
         const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
         const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
-        rl.DrawLineEx(pos_from, pos_to, 2, GRID_COLOR);
+        const thickness: f32 = if (grid_y == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
+        rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
     }
 
     const mouse_screen_pos = rl.GetMousePosition();
@@ -245,7 +239,7 @@ pub fn drawWorld(self: *Self, alloc: std.mem.Allocator, camera: *rl.Camera2D, ma
         .add_node => {
             if (self.active_node_id) |node_id| {
                 var new_node: *Map.Node = undefined;
-                var found = false;
+                var found = false; // TODO: why is there found flag?
 
                 if (hoveredNode(mouse_pos, map.nodes.items)) |node2| {
                     new_node = node2;

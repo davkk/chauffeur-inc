@@ -9,7 +9,7 @@ const g = @import("globals.zig");
 
 const Map = @import("Map.zig");
 
-const Action = enum { left, right, straight };
+const Action = enum { up, down, left, right };
 
 const Self = @This();
 
@@ -95,12 +95,15 @@ const PI_2: f32 = math.pi / 2.0;
 
 pub fn update(self: *Self, time: f32, map: *const Map) void {
     if (self.is_player) {
+        // TODO: make steering relative to the map and not the car, like in pacman
         if (rl.IsKeyPressed(rl.KEY_W)) {
-            self.next_action = .straight;
-        } else if (rl.IsKeyPressed(rl.KEY_D)) {
-            self.next_action = .right;
+            self.next_action = .up;
         } else if (rl.IsKeyPressed(rl.KEY_A)) {
             self.next_action = .left;
+        } else if (rl.IsKeyPressed(rl.KEY_S)) {
+            self.next_action = .down;
+        } else if (rl.IsKeyPressed(rl.KEY_D)) {
+            self.next_action = .right;
         }
     }
 
@@ -112,27 +115,34 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
             self.curr_node = next_idx;
             self.next_node = null;
 
-            if (self.next_action == .left or self.next_action == .right) {
-                self.speed *= 0.6;
-            }
+            // TODO: this needs to happen based on forward direction
+            // if (self.next_action == .left or self.next_action == .right) {
+            //     self.speed *= 0.6;
+            // }
 
             if (self.next_action) |next_action| {
                 switch (next_action) {
                     .left => {
-                        self.angle -= PI_2;
+                        self.angle = math.pi + PI_2;
                         self.pos = target.pos;
                     },
                     .right => {
-                        self.angle += PI_2;
-                        const forward = rl.Vector2{
-                            .x = math.sin(self.angle),
-                            .y = -math.cos(self.angle),
-                        };
-                        self.pos = rl.Vector2Add(target.pos, rl.Vector2Scale(forward, self.size.y));
+                        self.angle = PI_2;
+                        self.pos = target.pos;
+                        // const forward = rl.Vector2{
+                        //     .x = math.sin(self.angle),
+                        //     .y = -math.cos(self.angle),
+                        // };
+                        // self.pos = rl.Vector2Add(target.pos, rl.Vector2Scale(forward, self.size.y));
                     },
-                    .straight => {
+                    .up => {
+                        self.angle = 0;
                         self.pos = target.pos;
                     },
+                    .down => {
+                        self.angle = math.pi;
+                        self.pos = target.pos;
+                    }
                 }
                 self.next_action = null;
             }
@@ -154,7 +164,7 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
         }
 
         self.speed = @min(self.speed + self.accel * time, g.MAX_SPEED);
-        if (self.is_player and rl.IsKeyDown(rl.KEY_S)) {
+        if (self.is_player and rl.IsKeyDown(rl.KEY_SPACE)) {
             self.speed = @max(self.speed - self.brake * time, 0);
         }
 

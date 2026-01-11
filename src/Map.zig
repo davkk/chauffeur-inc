@@ -84,9 +84,6 @@ pub fn deinit(self: *const Self) void {
 
 // TODO: I hate that I pass active group here...
 pub fn draw(self: *Self, active_group: TextureGroupType) void {
-    rl.ClearBackground(rl.BLUE);
-    rl.DrawRectangle(0, 0, math.maxInt(c_int), math.maxInt(c_int), rl.BLACK);
-
     const tile_color = if (active_group == .none or active_group == .tiles) rl.WHITE else g.SEMI_TRANSPARENT;
     const road_color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
 
