@@ -38,8 +38,6 @@ pub const State = enum {
     fill,
 };
 
-const Direction = enum { top, right, bottom, left };
-
 const Self = @This();
 
 state: State,
@@ -83,10 +81,10 @@ fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *M
 fn hoveredTile(mouse_pos: rl.Vector2, tiles: Map.TileMap) ?usize {
     const mx: i32 = @intFromFloat(mouse_pos.x);
     const my: i32 = @intFromFloat(mouse_pos.y);
-    const col = @as(usize, @intCast(@divFloor(mx, g.TILE_SIZE)));
-    const row = @as(usize, @intCast(@divFloor(my, g.TILE_SIZE)));
-    if (row < tiles.len and col < tiles[0].len) {
-        const tile_id = tiles[row][col];
+    const col = @divFloor(mx, g.TILE_SIZE);
+    const row = @divFloor(my, g.TILE_SIZE);
+    if (row >= 0 and col >= 0 and row < tiles.len and col < tiles[0].len) {
+        const tile_id = tiles[@intCast(row)][@intCast(col)];
         if (tile_id != 0) {
             return tile_id;
         }
@@ -167,12 +165,82 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     }
 }
 
-fn getDirection(dx: f32, dy: f32) ?Direction {
+fn getDirection(dx: f32, dy: f32) ?g.Direction {
     if (dy < 0) return .top;
     if (dx > 0) return .right;
     if (dy > 0) return .bottom;
     if (dx < 0) return .left;
     return null;
+}
+
+fn createNode(map: *Map, pos: rl.Vector2) !*Map.Node {
+    const node = Map.Node.init(pos, map.nodes.items.len);
+    try map.nodes.append(node);
+    return &map.nodes.items[map.nodes.items.len - 1];
+}
+
+fn connectNodes(node1: *Map.Node, node2: *Map.Node) void {
+    const dx = node2.pos.x - node1.pos.x;
+    const dy = node2.pos.y - node1.pos.y;
+    const dir = getDirection(dx, dy) orelse return;
+
+    const dir_idx: usize = @intFromEnum(dir);
+    const opposite_idx: usize = (dir_idx + 2) % 4;
+
+    if (node1.edges[dir_idx] != null or node2.edges[opposite_idx] != null) {
+        return;
+    }
+
+    node1.edges[dir_idx] = node2.id;
+    node2.edges[opposite_idx] = node1.id;
+}
+
+fn splitEdge(a: *Map.Node, b: *Map.Node, new_node: *Map.Node) void {
+    const dx = b.pos.x - a.pos.x;
+    const dy = b.pos.y - a.pos.y;
+    const dir = getDirection(dx, dy) orelse return;
+
+    const dir_idx: usize = @intFromEnum(dir);
+    const opposite_idx: usize = (dir_idx + 2) % 4;
+
+    a.edges[dir_idx] = null;
+    b.edges[opposite_idx] = null;
+
+    a.edges[dir_idx] = new_node.id;
+    b.edges[opposite_idx] = new_node.id;
+    new_node.edges[opposite_idx] = a.id;
+    new_node.edges[dir_idx] = b.id;
+}
+
+fn removeEdge(node1: *Map.Node, node2: *Map.Node) void {
+    for (node1.edges, 0..) |edge_id, idx| {
+        if (edge_id) |id| {
+            if (id == node2.id) {
+                node1.edges[idx] = null;
+                break;
+            }
+        }
+    }
+    for (node2.edges, 0..) |edge_id, idx| {
+        if (edge_id) |id| {
+            if (id == node1.id) {
+                node2.edges[idx] = null;
+                break;
+            }
+        }
+    }
+}
+
+fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
+    for (nodes) |*node| {
+        if (!node.active) continue;
+        if (node.id == node_id) continue;
+        for (node.edges, 0..) |edge_id, idx| {
+            if (edge_id == node_id) {
+                node.edges[idx] = null;
+            }
+        }
+    }
 }
 
 pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D) !void {
@@ -211,54 +279,43 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
         .eraser => {
             self.active_node_id = null;
 
-            // if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
-            //     rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
-            //     if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-            //         node1.active = false;
-            //         for (map.nodes.items) |*node| {
-            //             if (node.active) {
-            //                 // _ = node.edges.swapRemove(node1.id);
-            //             }
-            //             // if (node.edges.count() == 0) {
-            //             //     node.active = false;
-            //             // }
-            //         }
-            //         if (self.active_node_id) |active| {
-            //             if (active == node1.id) {
-            //                 self.active_node_id = null;
-            //             }
-            //         }
-            //     }
-            // }
+            if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
+                rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+                    node1.active = false;
+                    removeAllEdgesToNode(node1.id, map.nodes.items);
+                }
+            }
 
-            // if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
-            //     const node1, const node2 = edge;
-            //     rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-            //     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-            //         // _ = node1.edges.swapRemove(node2.id);
-            //         // _ = node2.edges.swapRemove(node1.id);
-            //         // if (node1.edges.count() == 0) node1.active = false;
-            //         // if (node2.edges.count() == 0) node2.active = false;
-            //     }
-            // }
+            if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
+                const node1, const node2 = edge;
+                rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+                    removeEdge(node1, node2);
+                }
+            }
 
-            // if (hoveredTile(mouse_pos, map.tiles)) |tile_id| {
-            //     const tile = g.TILE_DEFINITIONS[tile_id];
-            //     rl.DrawRectanglePro(tile, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
-            //     // TODO: remove tile
-            // }
+            if (hoveredTile(mouse_pos, map.tiles)) |_| {
+                rl.DrawRectanglePro(
+                    .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                    0,
+                    g.SEMI_TRANSPARENT,
+                );
+                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+                    const mx: i32 = @intFromFloat(mouse_pos.x);
+                    const my: i32 = @intFromFloat(mouse_pos.y);
+                    const col = @as(usize, @intCast(@divFloor(mx, g.TILE_SIZE)));
+                    const row = @as(usize, @intCast(@divFloor(my, g.TILE_SIZE)));
+                    if (row < map.tiles.len and col < map.tiles[0].len) {
+                        map.tiles[row][col] = 0;
+                    }
+                }
+            }
         },
         .add_node => {
-            if (self.active_node_id) |node_id| { // continue adding
-                var new_node: ?*Map.Node = null;
-
-                if (hoveredNode(mouse_pos, map.nodes.items)) |node2| {
-                    // connect to existing node
-                    new_node = node2;
-                }
-
-                const active_node = &map.nodes.items[node_id];
-
+            if (self.active_node_id) |node_id| {
+                var active_node = &map.nodes.items[node_id];
                 rl.DrawLineEx(
                     active_node.pos,
                     mouse_pos,
@@ -268,22 +325,16 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
                 rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
 
                 if (!mouse_over_ui and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, mouse_pos)) {
-                    if (new_node == null) { // placing completely new node
-                        try map.nodes.append(Map.Node.init(mouse_pos, map.nodes.items.len));
-                        new_node = &map.nodes.items[map.nodes.items.len - 1];
+                    var new_node: ?*Map.Node = if (hoveredNode(mouse_pos, map.nodes.items)) |node2| node2 else null;
+                    if (new_node == null) {
+                        new_node = try createNode(map, mouse_pos);
+                        if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
+                            const a, const b = split_edge;
+                            splitEdge(a, b, new_node.?);
+                        }
                     }
-
-                    // figure out direction to node
-                    const dx = new_node.?.pos.x - active_node.pos.x;
-                    const dy = new_node.?.pos.y - active_node.pos.y;
-                    const direction = getDirection(dx, dy);
-
-                    if (direction) |dir| {
-                        const dir_idx: usize = @intFromEnum(dir);
-                        active_node.edges[dir_idx] = new_node.?.id;
-                        new_node.?.edges[(dir_idx + 2) % 4] = node_id;
-                    }
-
+                    active_node = &map.nodes.items[node_id]; // re-lookup active node after append to nodes ArrayList
+                    connectNodes(active_node, new_node.?);
                     self.active_node_id = new_node.?.id;
                 }
             } else if (hoveredNode(mouse_pos, map.nodes.items)) |node1| { // add to existing node
@@ -291,89 +342,98 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     self.active_node_id = node1.id;
                 }
-            } else { // default, add to map
+            } else {
                 rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    const new_node = Map.Node.init(mouse_pos, map.nodes.items.len);
-                    try map.nodes.append(new_node);
-                    const new_node_ptr = &map.nodes.items[map.nodes.items.len - 1];
-                    // if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
-                    //     const node_a = split_edge[0];
-                    //     const node_b = split_edge[1];
-                    //     _ = node_a.edges.swapRemove(node_b.id);
-                    //     _ = node_b.edges.swapRemove(node_a.id);
-                    //     try node_a.edges.put(new_node_ptr.id, {});
-                    //     try node_b.edges.put(new_node_ptr.id, {});
-                    //     try new_node_ptr.edges.put(node_a.id, {});
-                    //     try new_node_ptr.edges.put(node_b.id, {});
-                    // }
-                    self.active_node_id = new_node_ptr.id;
+                    const new_node = try createNode(map, mouse_pos);
+                    if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
+                        const a, const b = split_edge;
+                        splitEdge(a, b, new_node);
+                    }
+                    self.active_node_id = new_node.id;
                 }
             }
         },
         .fill => {
-            // TODO: make it so that when selected it turns into .fill mode
             rl.DrawRectanglePro(.{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE }, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
             if (self.active_tile_type) |active_tile_id| {
-                const curr_tex = g.TILE_DEFINITIONS[active_tile_id];
-                rl.DrawTexturePro(
-                    tileset_texture,
-                    curr_tex,
-                    .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                    0,
-                    rl.WHITE,
-                );
+                if (self.active_group == .sprites) {
+                    const sprite_id = active_tile_id - g.TILES.len;
+                    const curr_tex = g.SPRITES[sprite_id];
 
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    self.start_pos = mouse_pos;
-                }
+                    rl.DrawTexturePro(
+                        tileset_texture,
+                        curr_tex,
+                        .{ .x = mouse_world_pos.x, .y = mouse_world_pos.y, .width = curr_tex.width, .height = curr_tex.height },
+                        .{ .x = curr_tex.width / 2, .y = curr_tex.height / 2 },
+                        0,
+                        g.SEMI_TRANSPARENT,
+                    );
 
-                // FIXME: refactor that, make it dry
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
-                    self.end_pos = mouse_pos;
-
-                    const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
-                    const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
-                    const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
-                    const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
-
-                    var y: usize = min_y;
-                    while (y <= max_y) : (y += g.TILE_SIZE) {
-                        var x: usize = min_x;
-                        while (x <= max_x) : (x += g.TILE_SIZE) {
-                            rl.DrawTexturePro(
-                                tileset_texture,
-                                curr_tex,
-                                .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                                .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                                0,
-                                g.SEMI_TRANSPARENT,
-                            );
-                        }
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
+                        const sprite = Map.Sprite.init(mouse_world_pos, sprite_id);
+                        try map.sprites.append(sprite);
                     }
-                }
+                } else {
+                    const curr_tex = g.TILE_DEFINITIONS[active_tile_id];
+                    rl.DrawTexturePro(
+                        tileset_texture,
+                        curr_tex,
+                        .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+                        .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                        0,
+                        rl.WHITE,
+                    );
 
-                if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
-                    const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
-                    const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
-                    const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
-                    const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                        self.start_pos = mouse_pos;
+                    }
 
-                    var y: usize = min_y;
-                    while (y <= max_y) : (y += g.TILE_SIZE) {
-                        var x: usize = min_x;
-                        while (x <= max_x) : (x += g.TILE_SIZE) {
-                            const row = y / g.TILE_SIZE;
-                            const col = x / g.TILE_SIZE;
-                            if (row < map.tiles.len and col < map.tiles[0].len) {
-                                map.tiles[row][col] = active_tile_id;
+                    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
+                        self.end_pos = mouse_pos;
+
+                        const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
+                        const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
+                        const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
+                        const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+
+                        var y: usize = min_y;
+                        while (y <= max_y) : (y += g.TILE_SIZE) {
+                            var x: usize = min_x;
+                            while (x <= max_x) : (x += g.TILE_SIZE) {
+                                rl.DrawTexturePro(
+                                    tileset_texture,
+                                    curr_tex,
+                                    .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = curr_tex.width, .height = curr_tex.height },
+                                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                                    0,
+                                    g.SEMI_TRANSPARENT,
+                                );
                             }
                         }
                     }
 
-                    self.start_pos = null;
-                    self.end_pos = null;
+                    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
+                        const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
+                        const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
+                        const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
+                        const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+
+                        var y: usize = min_y;
+                        while (y <= max_y) : (y += g.TILE_SIZE) {
+                            var x: usize = min_x;
+                            while (x <= max_x) : (x += g.TILE_SIZE) {
+                                const row = y / g.TILE_SIZE;
+                                const col = x / g.TILE_SIZE;
+                                if (row < map.tiles.len and col < map.tiles[0].len) {
+                                    map.tiles[row][col] = active_tile_id;
+                                }
+                            }
+                        }
+
+                        self.start_pos = null;
+                        self.end_pos = null;
+                    }
                 }
             }
         },

@@ -27,6 +27,18 @@ pub const Node = struct {
     }
 };
 
+pub const Sprite = struct {
+    pos: rl.Vector2,
+    sprite_id: usize,
+
+    pub fn init(pos: rl.Vector2, sprite_id: usize) Sprite {
+        return Sprite{
+            .pos = pos,
+            .sprite_id = sprite_id,
+        };
+    }
+};
+
 const Self = @This();
 
 alloc: std.mem.Allocator,
@@ -36,6 +48,7 @@ tileset: Tileset,
 
 nodes: std.array_list.Managed(Node),
 tiles: TileMap,
+sprites: std.array_list.Managed(Sprite),
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
@@ -69,6 +82,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .road_texture = road_texture,
         .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
         .tiles = loaded.tiles,
+        .sprites = std.array_list.Managed(Sprite).fromOwnedSlice(alloc, loaded.sprites),
     };
 }
 
@@ -77,6 +91,7 @@ pub fn deinit(self: *const Self) void {
     rl.UnloadTexture(self.tileset.texture);
 
     self.nodes.deinit();
+    self.sprites.deinit();
 }
 
 // TODO: I hate that I pass active group here...
@@ -96,8 +111,8 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
                 .{
                     .x = @floatFromInt(tile_x * g.TILE_SIZE),
                     .y = @floatFromInt(tile_y * g.TILE_SIZE),
-                    .width = g.TILE_SIZE,
-                    .height = g.TILE_SIZE,
+                    .width = rect.width,
+                    .height = rect.height,
                 },
                 .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
                 0,
@@ -174,12 +189,31 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
         }
     }
 
-    // TODO: draw sprites
+    const sprite_color = if (active_group == .none or active_group == .sprites) rl.WHITE else g.SEMI_TRANSPARENT;
+
+    for (self.sprites.items) |sprite| {
+        const rect = g.SPRITES[sprite.sprite_id];
+        rl.DrawTexturePro(
+            self.tileset.texture,
+            rect,
+            .{
+                .x = sprite.pos.x,
+                .y = sprite.pos.y,
+                .width = rect.width,
+                .height = rect.height,
+            },
+            .{ .x = rect.width / 2, .y = rect.height / 2 },
+            0,
+            sprite_color,
+        );
+    }
+
 }
 
-fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMap } {
+fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMap, sprites: []Sprite } {
     var nodes = std.array_list.Managed(Node).init(alloc);
     var tiles: TileMap = std.mem.zeroes(TileMap);
+    var sprites = std.array_list.Managed(Sprite).init(alloc);
 
     const file = try std.fs.cwd().openFile(FILE_NAME, .{});
     defer file.close();
@@ -242,18 +276,27 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMa
 
                 for (0..4) |idx| {
                     if (iter.next()) |edge| {
-                        const edge_id = try std.fmt.parseInt(usize, std.mem.trim(u8, edge, "\n"), 10);
-                        node.edges[idx] = edge_id;
+                        const edge_id = try std.fmt.parseInt(i64, std.mem.trim(u8, edge, "\n"), 10);
+                        node.edges[idx] = if (edge_id >= 0) @intCast(edge_id) else null;
                     }
                 }
             },
             .sprites => {
-                // TODO: add sprites
+                var iter = std.mem.splitSequence(u8, line, ";");
+                const sprite_id_str = iter.next() orelse continue;
+                const x_str = iter.next() orelse continue;
+                const y_str = iter.next() orelse continue;
+
+                const sprite_id = try std.fmt.parseInt(usize, sprite_id_str, 10);
+                const x = try std.fmt.parseFloat(f32, x_str);
+                const y = try std.fmt.parseFloat(f32, y_str);
+
+                try sprites.append(Sprite.init(.{ .x = x, .y = y }, sprite_id));
             },
         }
     }
 
-    return .{ .nodes = try nodes.toOwnedSlice(), .tiles = tiles };
+    return .{ .nodes = try nodes.toOwnedSlice(), .tiles = tiles, .sprites = try sprites.toOwnedSlice() };
 }
 
 fn normalizeIds(self: *Self, nodes: []Node) ![]Node {
@@ -314,8 +357,8 @@ pub fn saveToFile(self: *Self) !void {
 
         try writer.interface.print("{d};{d};{d}", .{ node.id, node.pos.x, node.pos.y });
         for (node.edges) |edge_id| {
-            if (edge_id == null) continue;
-            try writer.interface.print(" {d}", .{edge_id.?});
+            const edge: i64 = if (edge_id) |edge| @intCast(edge) else -1;
+            try writer.interface.print(" {d}", .{edge});
         }
         try writer.interface.print("\n", .{});
     }
@@ -323,6 +366,9 @@ pub fn saveToFile(self: *Self) !void {
 
     // sprites
     try writer.interface.print("[sprites]\n", .{});
+    for (self.sprites.items) |sprite| {
+        try writer.interface.print("{d};{d};{d}\n", .{ sprite.sprite_id, sprite.pos.x, sprite.pos.y });
+    }
 
     writer.interface.flush() catch {
         std.debug.print("Error flushing buffered writer", .{});

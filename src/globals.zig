@@ -16,9 +16,12 @@ pub const TILES = [_]rl.Rectangle{
     .{ .x = 3 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
 };
 
-pub const SPRITES = [_]rl.Rectangle{};
+pub const SPRITES = [_]rl.Rectangle{
+    .{ .x = 3 * TILE_SIZE, .y = TILE_SIZE, .width = 64, .height = 64 },
+};
 
 pub const TILE_DEFINITIONS = TILES ++ SPRITES;
 
 pub const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
 
+pub const Direction = enum { top, right, bottom, left };

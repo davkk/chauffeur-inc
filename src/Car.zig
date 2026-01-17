@@ -75,20 +75,15 @@ pub fn deinit(self: *Self) void {
     rl.UnloadTexture(self.texture);
 }
 
-fn findNextNode(pos: rl.Vector2, angle: f32, curr_index: usize, map: *const Map) ?usize {
-    const curr = &map.nodes.items[curr_index];
-    const forward = rl.Vector2{
-        .x = math.sin(angle),
-        .y = -math.cos(angle),
-    };
-    for (curr.edges) |edge_id| {
-        if (edge_id == null) continue;
-        const node = &map.nodes.items[edge_id.?];
-        const dir = rl.Vector2Subtract(node.pos, pos);
-        if (@floor(rl.Vector2DotProduct(forward, dir)) > 0) {
-            return edge_id;
-        }
-    }
+fn findNextNode(angle: f32, curr_node: *Map.Node) ?usize {
+    const x = @as(i32, @intFromFloat(math.sin(angle)));
+    const y = @as(i32, @intFromFloat(-math.cos(angle)));
+
+    if (x == 0 and y < 0) return curr_node.edges[@intFromEnum(g.Direction.top)];
+    if (y == 0 and x > 0) return curr_node.edges[@intFromEnum(g.Direction.right)];
+    if (x == 0 and y > 0) return curr_node.edges[@intFromEnum(g.Direction.bottom)];
+    if (y == 0 and x < 0) return curr_node.edges[@intFromEnum(g.Direction.left)];
+
     return null;
 }
 
@@ -112,7 +107,7 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
         const target = map.nodes.items[next_idx];
         const dist = rl.Vector2Distance(self.pos, target.pos);
 
-        if (dist < self.size.y and self.next_action == .right or dist < 5.0) {
+        if (dist < 5.0) {
             self.curr_node = next_idx;
             self.next_node = null;
 
@@ -143,7 +138,7 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
                     .down => {
                         self.angle = math.pi;
                         self.pos = target.pos;
-                    }
+                    },
                 }
                 self.next_action = null;
             }
@@ -178,7 +173,7 @@ pub fn update(self: *Self, time: f32, map: *const Map) void {
 
     if (self.curr_node) |curr_idx| {
         const curr_node = &map.nodes.items[curr_idx];
-        self.next_node = findNextNode(curr_node.pos, self.angle, curr_idx, map);
+        self.next_node = findNextNode(self.angle, curr_node);
         if (self.next_node == null) {
             self.vel = rl.Vector2Zero();
             self.speed = 0;

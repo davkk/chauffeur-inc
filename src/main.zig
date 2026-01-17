@@ -24,8 +24,8 @@ pub fn main() !void {
     const alloc = arena.allocator();
 
     var camera = rl.Camera2D{
-        .target = .{ .x = 0, .y = 0 },
-        .offset = .{ .x = g.SCREEN_WIDTH / 2, .y = g.SCREEN_HEIGHT / 2 },
+        .target = .{ .x = g.SCREEN_WIDTH / 4 - g.TILE_SIZE / 2, .y = g.SCREEN_HEIGHT / 4 - g.TILE_SIZE / 2 },
+        .offset = .{ .x = g.SCREEN_WIDTH / 2 + g.TILE_SIZE, .y = g.SCREEN_HEIGHT / 2 + g.TILE_SIZE },
         .zoom = 2,
     };
 
