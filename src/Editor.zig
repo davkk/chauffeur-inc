@@ -45,6 +45,7 @@ active_tile_type: ?usize,
 active_node_id: ?usize,
 active_group: TextureGroupType,
 group_expanded: [2]bool,
+panel_expanded: bool,
 
 start_pos: ?rl.Vector2,
 end_pos: ?rl.Vector2,
@@ -111,6 +112,7 @@ pub fn init() Self {
         .active_tile_type = null,
         .active_group = .none,
         .group_expanded = [_]bool{ true, true },
+        .panel_expanded = true,
         .start_pos = null,
         .end_pos = null,
     };
@@ -137,7 +139,9 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     } else if (KEY_CTRL and rl.IsKeyDown(rl.KEY_MINUS)) {
         camera.zoom = @max(camera.zoom - 1.0, 1.0);
     } else if (!KEY_SHIFT and !KEY_CTRL) {
-        if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
+        if (rl.IsKeyPressed(rl.KEY_TAB) or rl.IsKeyPressed(rl.KEY_H)) {
+            self.panel_expanded = !self.panel_expanded;
+        } else if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
             self.active_node_id = null;
             self.active_group = .none;
             self.active_tile_type = null;
@@ -266,7 +270,8 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
     }
 
     const mouse_screen_pos = rl.GetMousePosition();
-    const sidebar_rect = rl.Rectangle{ .x = g.SCREEN_WIDTH - 200, .y = 0, .width = 200, .height = g.SCREEN_HEIGHT };
+    const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
+    const sidebar_rect = rl.Rectangle{ .x = g.SCREEN_WIDTH - sidebar_width, .y = 0, .width = sidebar_width, .height = g.SCREEN_HEIGHT };
     const mouse_over_ui = rl.CheckCollisionPointRec(mouse_screen_pos, sidebar_rect);
 
     const mouse_world_pos = rl.GetScreenToWorld2D(mouse_screen_pos, camera.*);
@@ -305,10 +310,10 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
                 if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
                     const mx: i32 = @intFromFloat(mouse_pos.x);
                     const my: i32 = @intFromFloat(mouse_pos.y);
-                    const col = @as(usize, @intCast(@divFloor(mx, g.TILE_SIZE)));
-                    const row = @as(usize, @intCast(@divFloor(my, g.TILE_SIZE)));
-                    if (row < map.tiles.len and col < map.tiles[0].len) {
-                        map.tiles[row][col] = 0;
+                    const col = @divFloor(mx, g.TILE_SIZE);
+                    const row = @divFloor(my, g.TILE_SIZE);
+                    if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
+                        map.tiles[@intCast(row)][@intCast(col)] = 0;
                     }
                 }
             }
@@ -392,14 +397,14 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
                     if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
                         self.end_pos = mouse_pos;
 
-                        const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
-                        const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
-                        const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
-                        const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+                        const min_x: i64 = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
+                        const max_x: i64 = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
+                        const min_y: i64 = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
+                        const max_y: i64 = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
 
-                        var y: usize = min_y;
+                        var y = min_y;
                         while (y <= max_y) : (y += g.TILE_SIZE) {
-                            var x: usize = min_x;
+                            var x = min_x;
                             while (x <= max_x) : (x += g.TILE_SIZE) {
                                 rl.DrawTexturePro(
                                     tileset_texture,
@@ -414,19 +419,19 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
                     }
 
                     if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
-                        const min_x: usize = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
-                        const max_x: usize = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
-                        const min_y: usize = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
-                        const max_y: usize = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
+                        const min_x: i64 = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
+                        const max_x: i64 = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
+                        const min_y: i64 = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
+                        const max_y: i64 = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
 
-                        var y: usize = min_y;
+                        var y = min_y;
                         while (y <= max_y) : (y += g.TILE_SIZE) {
-                            var x: usize = min_x;
+                            var x = min_x;
                             while (x <= max_x) : (x += g.TILE_SIZE) {
-                                const row = y / g.TILE_SIZE;
-                                const col = x / g.TILE_SIZE;
-                                if (row < map.tiles.len and col < map.tiles[0].len) {
-                                    map.tiles[row][col] = active_tile_id;
+                                const row = @divFloor(y, g.TILE_SIZE);
+                                const col = @divFloor(x, g.TILE_SIZE);
+                                if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
+                                    map.tiles[@intCast(row)][@intCast(col)] = active_tile_id;
                                 }
                             }
                         }
@@ -441,77 +446,98 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
 }
 
 pub fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
-    const sidebar_x = g.SCREEN_WIDTH - 200;
+    const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
+    const sidebar_x = g.SCREEN_WIDTH - sidebar_width;
     const sidebar_y = 0;
 
-    const sidebar_width = 200;
     const sidebar_height = g.SCREEN_HEIGHT;
 
-    _ = rl.GuiPanel(
-        .{ .x = sidebar_x, .y = sidebar_y, .width = sidebar_width, .height = sidebar_height },
-        "Texture Selector",
-    );
+    if (self.panel_expanded) {
+        _ = rl.GuiPanel(
+            .{ .x = sidebar_x, .y = sidebar_y, .width = sidebar_width, .height = sidebar_height },
+            "Texture Selector",
+        );
 
-    var y_offset: f32 = 30;
-
-    const mouse_screen_pos = rl.GetMousePosition();
-    const cols = 3;
-    var label_buf: [64]u8 = undefined;
-
-    for (GROUPS, 0..) |group, group_idx| {
-        const header_rect = rl.Rectangle{
-            .x = sidebar_x + 10,
-            .y = sidebar_y + y_offset,
-            .width = sidebar_width - 20,
+        const toggle_rect = rl.Rectangle{
+            .x = sidebar_x + 5,
+            .y = sidebar_y + 5,
+            .width = 25,
             .height = 20,
         };
-
-        const arrow = if (self.group_expanded[group_idx]) "v" else ">";
-        const label = std.fmt.bufPrintZ(&label_buf, "{} {s}", .{ group.type, arrow }) catch "error";
-        if (rl.GuiButton(header_rect, label) == 1) {
-            self.group_expanded[group_idx] = !self.group_expanded[group_idx];
+        if (rl.GuiButton(toggle_rect, "<<") == 1) {
+            self.panel_expanded = false;
         }
-        y_offset += 25;
 
-        if (self.group_expanded[group_idx]) {
-            const rows = (group.tiles.len + cols - 1) / cols;
-            for (group.tiles, 0..) |def, tile_i| {
-                const global_i = switch (group_idx) {
-                    0 => tile_i,
-                    1 => g.TILES.len + tile_i,
-                    else => 0,
-                };
+        var y_offset: f32 = 30;
 
-                const row = tile_i / cols;
-                const col = tile_i % cols;
+        const mouse_screen_pos = rl.GetMousePosition();
+        const cols = 3;
+        var label_buf: [64]u8 = undefined;
 
-                const button_x = sidebar_x + 10 + @as(f32, @floatFromInt(col)) * 60;
-                const button_y = sidebar_y + y_offset + @as(f32, @floatFromInt(row)) * 60;
+        for (GROUPS, 0..) |group, group_idx| {
+            const header_rect = rl.Rectangle{
+                .x = sidebar_x + 10,
+                .y = sidebar_y + y_offset,
+                .width = sidebar_width - 20,
+                .height = 20,
+            };
 
-                const button_rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = 50, .height = 50 };
-
-                const is_hovered = rl.CheckCollisionPointRec(mouse_screen_pos, button_rect);
-
-                // thumbnail
-                rl.DrawTexturePro(
-                    tileset_texture,
-                    def,
-                    .{ .x = button_x + 5, .y = button_y + 5, .width = 40, .height = 40 },
-                    .{ .x = 0, .y = 0 },
-                    0,
-                    rl.WHITE,
-                );
-
-                if (is_hovered and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    self.active_tile_type = global_i;
-                    self.active_group = group.type;
-                }
-
-                if (self.active_tile_type == global_i) {
-                    rl.DrawRectangleLinesEx(button_rect, 2, rl.YELLOW);
-                }
+            const arrow = if (self.group_expanded[group_idx]) "v" else ">";
+            const label = std.fmt.bufPrintZ(&label_buf, "{} {s}", .{ group.type, arrow }) catch "error";
+            if (rl.GuiButton(header_rect, label) == 1) {
+                self.group_expanded[group_idx] = !self.group_expanded[group_idx];
             }
-            y_offset += @as(f32, @floatFromInt(rows)) * 60 + 5;
+            y_offset += 25;
+
+            if (self.group_expanded[group_idx]) {
+                const rows = (group.tiles.len + cols - 1) / cols;
+                for (group.tiles, 0..) |def, tile_i| {
+                    const global_i = switch (group_idx) {
+                        0 => tile_i,
+                        1 => g.TILES.len + tile_i,
+                        else => 0,
+                    };
+
+                    const row = tile_i / cols;
+                    const col = tile_i % cols;
+
+                    const button_x = sidebar_x + 10 + @as(f32, @floatFromInt(col)) * 60;
+                    const button_y = sidebar_y + y_offset + @as(f32, @floatFromInt(row)) * 60;
+
+                    const button_rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = 50, .height = 50 };
+
+                    const is_hovered = rl.CheckCollisionPointRec(mouse_screen_pos, button_rect);
+
+                    rl.DrawTexturePro(
+                        tileset_texture,
+                        def,
+                        .{ .x = button_x + 5, .y = button_y + 5, .width = 40, .height = 40 },
+                        .{ .x = 0, .y = 0 },
+                        0,
+                        rl.WHITE,
+                    );
+
+                    if (is_hovered and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                        self.active_tile_type = global_i;
+                        self.active_group = group.type;
+                    }
+
+                    if (self.active_tile_type == global_i) {
+                        rl.DrawRectangleLinesEx(button_rect, 2, rl.YELLOW);
+                    }
+                }
+                y_offset += @as(f32, @floatFromInt(rows)) * 60 + 5;
+            }
+        }
+    } else {
+        const toggle_rect = rl.Rectangle{
+            .x = sidebar_x + 2,
+            .y = sidebar_y + g.SCREEN_HEIGHT / 2 - 10,
+            .width = 26,
+            .height = 20,
+        };
+        if (rl.GuiButton(toggle_rect, ">>") == 1) {
+            self.panel_expanded = true;
         }
     }
 }
