@@ -170,9 +170,9 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
 }
 
 fn getDirection(dx: f32, dy: f32) ?g.Direction {
-    if (dy < 0) return .top;
+    if (dy < 0) return .up;
     if (dx > 0) return .right;
-    if (dy > 0) return .bottom;
+    if (dy > 0) return .down;
     if (dx < 0) return .left;
     return null;
 }
