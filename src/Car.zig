@@ -30,13 +30,12 @@ accel: f32,
 frict: f32,
 brake: f32,
 
-angle: f32,
-prev_angle: ?f32,
-
+curr_dir: g.Direction,
+prev_dir: ?g.Direction,
 next_dir: ?g.Direction,
 next_dir_timer: f32,
 
-pub fn init(is_player: bool, x: f32, y: f32, angle: f32) Self {
+pub fn init(is_player: bool, x: f32, y: f32) Self {
     const width = 16;
     const height = 32;
 
@@ -67,9 +66,8 @@ pub fn init(is_player: bool, x: f32, y: f32, angle: f32) Self {
         .speed = 0,
         .vel = rl.Vector2Zero(),
 
-        .angle = angle,
-        .prev_angle = null,
-
+        .curr_dir = .right,
+        .prev_dir = null,
         .next_dir = null,
         .next_dir_timer = 0,
     };
@@ -79,24 +77,17 @@ pub fn deinit(self: *Self) void {
     rl.UnloadTexture(self.texture);
 }
 
-fn direction(self: *Self) g.Direction {
-    const x: i32 = @intFromFloat(math.sin(self.angle));
-    const y: i32 = @intFromFloat(-math.cos(self.angle));
-    if (x == 0 and y < 0) return .up;
-    if (y == 0 and x > 0) return .right;
-    if (x == 0 and y > 0) return .down;
-    return .left;
-}
-
-fn oppositeDirection(self: *Self) g.Direction {
-    const dir_idx: usize = @intFromEnum(self.direction());
+fn oppositeDirection(dir: g.Direction) g.Direction {
+    const dir_idx: usize = @intFromEnum(dir);
     return @enumFromInt((dir_idx + 2) % 4);
 }
 
 fn forward(self: *Self) rl.Vector2 {
-    return .{
-        .x = math.sin(self.angle),
-        .y = -math.cos(self.angle),
+    return switch (self.curr_dir) {
+        .up => return .{ .x = 0, .y = -1 },
+        .right => return .{ .x = 1, .y = 0 },
+        .down => return .{ .x = 0, .y = 1 },
+        .left => return .{ .x = -1, .y = 0 },
     };
 }
 
@@ -107,14 +98,14 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         if (rl.IsKeyPressed(rl.KEY_W)) {
             self.next_dir = .up;
             self.next_dir_timer = 0;
-        } else if (rl.IsKeyPressed(rl.KEY_A)) {
-            self.next_dir = .left;
+        } else if (rl.IsKeyPressed(rl.KEY_D)) {
+            self.next_dir = .right;
             self.next_dir_timer = 0;
         } else if (rl.IsKeyPressed(rl.KEY_S)) {
             self.next_dir = .down;
             self.next_dir_timer = 0;
-        } else if (rl.IsKeyPressed(rl.KEY_D)) {
-            self.next_dir = .right;
+        } else if (rl.IsKeyPressed(rl.KEY_A)) {
+            self.next_dir = .left;
             self.next_dir_timer = 0;
         }
     }
@@ -124,18 +115,17 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         self.next_dir = null;
     }
 
-    self.prev_angle = self.angle;
+    self.prev_dir = self.curr_dir;
 
     if (self.next_node) |next_idx| {
         const next_node = map.nodes.items[next_idx];
 
         if (self.next_dir) |next_dir| {
-            const opp_dir = self.oppositeDirection();
+            const opp_dir = oppositeDirection(self.curr_dir);
             const opp_dir_idx = @intFromEnum(opp_dir);
             if (next_dir == opp_dir) {
-                const k: f32 = @floatFromInt(opp_dir_idx);
-                self.prev_angle = self.angle;
-                self.angle = k * PI_2;
+                self.prev_dir = self.curr_dir;
+                self.curr_dir = next_dir;
                 self.next_node = next_node.edges[opp_dir_idx];
                 self.next_dir = null;
             }
@@ -145,19 +135,18 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
 
         if (dist < 5.0) {
             self.pos = next_node.pos;
-
             self.curr_node = next_idx;
             self.next_node = null;
+            return; // TODO: refactor this, confusing flow
         }
     } else if (self.curr_node) |curr_idx| {
         if (self.next_dir) |next_dir| {
-            const idx: f32 = @floatFromInt(@intFromEnum(next_dir));
-            self.prev_angle = self.angle;
-            self.angle = idx * PI_2;
+            self.prev_dir = self.curr_dir;
+            self.curr_dir = next_dir;
         }
 
         const curr_node = &map.nodes.items[curr_idx];
-        self.next_node = curr_node.edges[@intFromEnum(self.direction())];
+        self.next_node = curr_node.edges[@intFromEnum(self.curr_dir)];
 
         if (self.next_node == null) {
             self.vel = rl.Vector2Zero();
@@ -170,21 +159,22 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         self.speed = @max(self.speed - self.brake * dt, 0);
     }
 
-    if (self.prev_angle) |prev_angle| {
-        if (self.angle != prev_angle) {
-            const angle_diff = @abs(self.angle - prev_angle);
-            if (angle_diff - PI_2 < 1e-4) {
+    if (self.prev_dir) |prev_dir| {
+        if (self.curr_dir != prev_dir) {
+            const curr_dir_idx: i32 = @intFromEnum(self.curr_dir);
+            const prev_dir_idx: i32 = @intFromEnum(prev_dir);
+            const dir_diff = @mod(curr_dir_idx - prev_dir_idx + 4, 4);
+            if (dir_diff == 1 or dir_diff == 3) {
                 self.speed *= g.SPEED_PENALTY_TURN;
-            } else if (angle_diff - math.pi < 1e-4) {
+            } else if (dir_diff == 2) {
                 self.speed *= g.SPEED_PENALTY_UTURN;
             }
         }
-        self.prev_angle = null;
+        self.prev_dir = null;
     }
 
     self.vel = rl.Vector2Scale(self.forward(), self.speed);
-    self.pos.x += self.vel.x * dt;
-    self.pos.y += self.vel.y * dt;
+    self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, dt));
 }
 
 pub fn rect(self: *const Self) rl.Rectangle {
@@ -197,25 +187,18 @@ pub fn rect(self: *const Self) rl.Rectangle {
 }
 
 pub fn draw(self: *const Self) void {
-    // const forward = rl.Vector2{
-    //     .x = math.sin(self.angle),
-    //     .y = -math.cos(self.angle),
-    // };
-    // const right = rl.Vector2{
-    //     .x = -forward.y,
-    //     .y = forward.x,
-    // };
-    // const offset = vec_add(&.{
-    //     self.pos,
-    //     rl.Vector2Scale(right, self.size.x),
-    // });
-
+    const angle: f32 = switch (self.curr_dir) {
+        .up => 0,
+        .right => 90,
+        .down => 180,
+        .left => 270,
+    };
     rl.DrawTexturePro(
         self.texture,
         .{ .x = 0, .y = 0, .width = self.size.x, .height = self.size.y },
         .{ .x = self.pos.x, .y = self.pos.y, .width = self.size.x, .height = self.size.y },
         .{ .x = self.size.x / 2, .y = self.size.y / 2 },
-        self.angle * 180 / math.pi,
+        angle,
         rl.WHITE,
     );
 }

@@ -34,7 +34,7 @@ pub fn main() !void {
 
     // FIXME: this will probably change once I have levels
     const init_node = map.nodes.items[0];
-    var player = Car.init(true, init_node.pos.x, init_node.pos.y, math.pi / 2.0);
+    var player = Car.init(true, init_node.pos.x, init_node.pos.y);
     player.curr_node = init_node.id;
     defer player.deinit();
 
