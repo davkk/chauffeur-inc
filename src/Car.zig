@@ -124,7 +124,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         self.next_dir = null;
     }
 
-    const prev_angle = self.angle;
+    self.prev_angle = self.angle;
 
     if (self.next_node) |next_idx| {
         const next_node = map.nodes.items[next_idx];
@@ -134,6 +134,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
             const opp_dir_idx = @intFromEnum(opp_dir);
             if (next_dir == opp_dir) {
                 const k: f32 = @floatFromInt(opp_dir_idx);
+                self.prev_angle = self.angle;
                 self.angle = k * PI_2;
                 self.next_node = next_node.edges[opp_dir_idx];
                 self.next_dir = null;
@@ -147,20 +148,11 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
 
             self.curr_node = next_idx;
             self.next_node = null;
-
-            const angle_diff = @abs(self.angle - prev_angle);
-            std.debug.print("angle_diff: {} - {} = {}\n", .{self.angle, prev_angle, angle_diff});
-            if (angle_diff - PI_2 < 1e-4) {
-                self.speed *= g.SPEED_PENALTY_TURN;
-            } else if (angle_diff - math.pi < 1e-4) {
-                self.speed *= g.SPEED_PENALTY_UTURN;
-            }
         }
     } else if (self.curr_node) |curr_idx| {
-        self.prev_angle = null;
-
         if (self.next_dir) |next_dir| {
             const idx: f32 = @floatFromInt(@intFromEnum(next_dir));
+            self.prev_angle = self.angle;
             self.angle = idx * PI_2;
         }
 
@@ -177,6 +169,19 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
     if (self.is_player and rl.IsKeyDown(rl.KEY_SPACE)) {
         self.speed = @max(self.speed - self.brake * dt, 0);
     }
+
+    if (self.prev_angle) |prev_angle| {
+        if (self.angle != prev_angle) {
+            const angle_diff = @abs(self.angle - prev_angle);
+            if (angle_diff - PI_2 < 1e-4) {
+                self.speed *= g.SPEED_PENALTY_TURN;
+            } else if (angle_diff - math.pi < 1e-4) {
+                self.speed *= g.SPEED_PENALTY_UTURN;
+            }
+        }
+        self.prev_angle = null;
+    }
+
     self.vel = rl.Vector2Scale(self.forward(), self.speed);
     self.pos.x += self.vel.x * dt;
     self.pos.y += self.vel.y * dt;

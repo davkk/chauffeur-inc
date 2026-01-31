@@ -14,7 +14,7 @@ pub const MAX_SPEED = 300;
 pub const NEXT_DIR_TIMEOUT = 0.4;
 pub const NODE_ARRIVAL_DIST = 2.0;
 pub const SPEED_PENALTY_TURN = 0.6;
-pub const SPEED_PENALTY_UTURN = 0.8;
+pub const SPEED_PENALTY_UTURN = 0.3;
 
 pub const TILES = [_]rl.Rectangle{
     .{ .x = 2 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
