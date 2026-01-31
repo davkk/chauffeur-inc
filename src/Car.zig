@@ -1,15 +1,11 @@
 const std = @import("std");
+const g = @import("globals.zig");
 
 const rl = @import("raylib.zig").rl;
 const vec_rotate = @import("raylib.zig").vec_rotate;
 const vec_add = @import("raylib.zig").vec_add;
 
-const math = @import("std").math;
-const g = @import("globals.zig");
-
 const Map = @import("Map.zig");
-
-const Action = enum { up, down, left, right };
 
 const Self = @This();
 
@@ -82,16 +78,12 @@ fn oppositeDirection(dir: g.Direction) g.Direction {
     return @enumFromInt((dir_idx + 2) % 4);
 }
 
-fn forward(self: *Self) rl.Vector2 {
-    return switch (self.curr_dir) {
-        .up => return .{ .x = 0, .y = -1 },
-        .right => return .{ .x = 1, .y = 0 },
-        .down => return .{ .x = 0, .y = 1 },
-        .left => return .{ .x = -1, .y = 0 },
-    };
-}
-
-const PI_2: f32 = math.pi / 2.0;
+const BASE_VEC: [4]rl.Vector2 = .{
+    .{ .x = 0, .y = -1 },
+    .{ .x = 1, .y = 0 },
+    .{ .x = 0, .y = 1 },
+    .{ .x = -1, .y = 0 },
+};
 
 pub fn update(self: *Self, dt: f32, map: *const Map) void {
     if (self.is_player) {
@@ -132,7 +124,6 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         }
 
         const dist = rl.Vector2Distance(self.pos, next_node.pos);
-
         if (dist < 5.0) {
             self.pos = next_node.pos;
             self.curr_node = next_idx;
@@ -151,6 +142,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         if (self.next_node == null) {
             self.vel = rl.Vector2Zero();
             self.speed = 0;
+            return; // TODO: refactor this, confusing flow
         }
     }
 
@@ -163,7 +155,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         if (self.curr_dir != prev_dir) {
             const curr_dir_idx: i32 = @intFromEnum(self.curr_dir);
             const prev_dir_idx: i32 = @intFromEnum(prev_dir);
-            const dir_diff = @mod(curr_dir_idx - prev_dir_idx + 4, 4);
+            const dir_diff = @mod(curr_dir_idx - prev_dir_idx, 4);
             if (dir_diff == 1 or dir_diff == 3) {
                 self.speed *= g.SPEED_PENALTY_TURN;
             } else if (dir_diff == 2) {
@@ -173,7 +165,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
         self.prev_dir = null;
     }
 
-    self.vel = rl.Vector2Scale(self.forward(), self.speed);
+    self.vel = rl.Vector2Scale(BASE_VEC[@intFromEnum(self.curr_dir)], self.speed);
     self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, dt));
 }
 

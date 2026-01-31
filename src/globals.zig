@@ -29,4 +29,5 @@ pub const TILE_DEFINITIONS = TILES ++ SPRITES;
 
 pub const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
 
+// TODO: I feel like this should be somewhere else
 pub const Direction = enum { up, right, down, left };

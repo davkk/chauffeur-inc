@@ -1,4 +1,5 @@
 const std = @import("std");
+const rand = std.crypto.random;
 const math = std.math;
 
 const rl = @import("raylib.zig").rl;
@@ -10,6 +11,8 @@ const Tileset = @import("Tileset.zig");
 const FILE_NAME = "src/assets/map.map";
 
 pub const TileMap = [g.SCREEN_HEIGHT / g.TILE_SIZE][g.SCREEN_WIDTH / g.TILE_SIZE]usize;
+
+const Self = @This();
 
 pub const Node = struct {
     pos: rl.Vector2,
@@ -27,6 +30,11 @@ pub const Node = struct {
     }
 };
 
+pub const Edge = struct {
+    from: usize,
+    to: usize,
+};
+
 pub const Sprite = struct {
     pos: rl.Vector2,
     sprite_id: usize,
@@ -39,16 +47,54 @@ pub const Sprite = struct {
     }
 };
 
-const Self = @This();
+/// start, end are inclusive
+fn randomPair(start: usize, end: usize) struct { usize, usize } {
+    var a: usize = undefined;
+    var b: usize = undefined;
+    while (a == b) { // WARN: this can go forever, separate thread
+        a = rand.intRangeAtMost(usize, start, end);
+        b = rand.intRangeAtMost(usize, start, end);
+    }
+    return .{ a, b };
+}
+
+pub const Passenger = struct {
+    start_pos: rl.Vector2,
+    end_pos: rl.Vector2,
+    state: enum { waiting, in_car, delivered },
+
+    pub fn init(map: *Self) Passenger {
+        const edge_start_idx, const edge_end_idx = randomPair(0, map.edges.items.len - 1);
+
+        const edge_start = map.edges.items[edge_start_idx];
+        const node_start_from = map.nodes.items[edge_start.from].pos;
+        const node_start_to = map.nodes.items[edge_start.to].pos;
+        const start_pos = rl.Vector2Scale(rl.Vector2Subtract(node_start_to, node_start_from), 0.5);
+
+        const edge_end = map.edges.items[edge_end_idx];
+        const node_end_from = map.nodes.items[edge_end.from].pos;
+        const node_end_to = map.nodes.items[edge_end.to].pos;
+        const end_pos = rl.Vector2Scale(rl.Vector2Subtract(node_end_to, node_end_from), 0.5);
+
+        return .{
+            .start_pos = rl.Vector2Add(node_start_from, start_pos),
+            .end_pos = rl.Vector2Add(node_end_from, end_pos),
+            .state = .waiting,
+        };
+    }
+};
 
 alloc: std.mem.Allocator,
 
 road_texture: [3]rl.Texture2D,
 tileset: Tileset,
 
-nodes: std.array_list.Managed(Node),
 tiles: TileMap,
+nodes: std.array_list.Managed(Node),
+edges: std.array_list.Managed(Edge),
 sprites: std.array_list.Managed(Sprite),
+
+passenger: ?Passenger,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
@@ -80,9 +126,11 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .alloc = alloc,
         .tileset = tileset,
         .road_texture = road_texture,
-        .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
         .tiles = loaded.tiles,
+        .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
+        .edges = std.array_list.Managed(Edge).fromOwnedSlice(alloc, loaded.edges),
         .sprites = std.array_list.Managed(Sprite).fromOwnedSlice(alloc, loaded.sprites),
+        .passenger = null,
     };
 }
 
@@ -95,7 +143,7 @@ pub fn deinit(self: *const Self) void {
 }
 
 // TODO: I hate that I pass active group here...
-pub fn draw(self: *Self, active_group: TextureGroupType) void {
+pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
     const tile_color = if (active_group == .none or active_group == .tiles) rl.WHITE else g.SEMI_TRANSPARENT;
     const road_color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
 
@@ -134,6 +182,10 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
             0,
             color,
         );
+
+        var buf: [8]u8 = undefined;
+        const id_str = std.fmt.bufPrintZ(&buf, "{d}", .{node1.id}) catch "??";
+        rl.DrawText(@ptrCast(id_str), @intFromFloat(node1.pos.x), @intFromFloat(node1.pos.y), 20, rl.BLACK);
     }
 
     // draw edges
@@ -187,6 +239,15 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
                 road_color,
             );
         }
+
+        if (self.passenger) |passenger| {
+            std.debug.print("{any}\n", .{passenger.state});
+            switch (passenger.state) {
+                .waiting => rl.DrawCircleV(passenger.start_pos, 10, rl.BLUE),
+                .in_car => rl.DrawCircleV(passenger.end_pos, 10, rl.BLUE),
+                .delivered => {},
+            }
+        }
     }
 
     const sprite_color = if (active_group == .none or active_group == .sprites) rl.WHITE else g.SEMI_TRANSPARENT;
@@ -208,10 +269,23 @@ pub fn draw(self: *Self, active_group: TextureGroupType) void {
         );
     }
 
+    if (is_debug) {
+        for (self.nodes.items) |*node| {
+            if (!node.active) continue;
+            var buf: [8]u8 = undefined;
+            const id_str = std.fmt.bufPrintZ(&buf, "{d}", .{node.id}) catch "??";
+            rl.DrawText(@ptrCast(id_str), @intFromFloat(node.pos.x), @intFromFloat(node.pos.y), 20, rl.BLACK);
+        }
+    }
 }
 
-fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMap, sprites: []Sprite } {
+pub fn spawnPassenger(self: *Self) void {
+    self.passenger = Passenger.init(self);
+}
+
+fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge, tiles: TileMap, sprites: []Sprite } {
     var nodes = std.array_list.Managed(Node).init(alloc);
+    var edges = std.array_list.Managed(Edge).init(alloc);
     var tiles: TileMap = std.mem.zeroes(TileMap);
     var sprites = std.array_list.Managed(Sprite).init(alloc);
 
@@ -242,7 +316,7 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMa
 
         switch (section) {
             .header => {
-                // skip header for now
+                // TODO: skip header for now
                 continue;
             },
             .tiles => {
@@ -271,15 +345,19 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMa
                 const x = try std.fmt.parseFloat(f32, x_str);
                 const y = try std.fmt.parseFloat(f32, y_str);
 
-                try nodes.append(Node.init(.{ .x = x, .y = y }, id));
-                const node = &nodes.items[nodes.items.len - 1];
-
+                var node = Node.init(.{ .x = x, .y = y }, id);
                 for (0..4) |idx| {
                     if (iter.next()) |edge| {
                         const edge_id = try std.fmt.parseInt(i64, std.mem.trim(u8, edge, "\n"), 10);
-                        node.edges[idx] = if (edge_id >= 0) @intCast(edge_id) else null;
+                        if (edge_id >= 0) {
+                            node.edges[idx] = @intCast(edge_id);
+                            try edges.append(.{ .from = id, .to = @intCast(edge_id) });
+                        } else {
+                            node.edges[idx] = null;
+                        }
                     }
                 }
+                try nodes.append(node);
             },
             .sprites => {
                 var iter = std.mem.splitSequence(u8, line, ";");
@@ -296,7 +374,12 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, tiles: TileMa
         }
     }
 
-    return .{ .nodes = try nodes.toOwnedSlice(), .tiles = tiles, .sprites = try sprites.toOwnedSlice() };
+    return .{
+        .tiles = tiles,
+        .nodes = try nodes.toOwnedSlice(),
+        .edges = try edges.toOwnedSlice(),
+        .sprites = try sprites.toOwnedSlice(),
+    };
 }
 
 fn normalizeIds(self: *Self, nodes: []Node) ![]Node {

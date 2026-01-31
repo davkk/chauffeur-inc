@@ -18,6 +18,7 @@ pub fn main() !void {
     rl.SetExitKey(0);
 
     var mode = Mode.editor;
+    var is_debug = false;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -38,6 +39,8 @@ pub fn main() !void {
     player.curr_node = init_node.id;
     defer player.deinit();
 
+    map.spawnPassenger();
+
     // var cars = std.array_list.Managed(Car).init(alloc);
     // for (0..3) |_| {
     //     var car = Car.init(false, init_node.pos.x, init_node.pos.y, math.pi / 2.0);
@@ -46,12 +49,19 @@ pub fn main() !void {
     // }
 
     var editor = Editor.init();
+    var pickups: u32 = 0; // TODO: this should be in some game state
 
     while (!rl.WindowShouldClose()) {
         const KEY_CTRL = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
         const KEY_SHIFT = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
         if (KEY_CTRL and KEY_SHIFT and rl.IsKeyPressed(rl.KEY_E)) {
             mode = if (mode == .game) Mode.editor else Mode.game;
+        }
+        if (KEY_CTRL and KEY_SHIFT and rl.IsKeyPressed(rl.KEY_D)) {
+            is_debug = !is_debug;
+        }
+        if (KEY_CTRL and KEY_SHIFT and rl.IsKeyPressed(rl.KEY_P)) {
+            map.spawnPassenger();
         }
 
         rl.BeginDrawing();
@@ -62,6 +72,25 @@ pub fn main() !void {
                 const time = rl.GetFrameTime();
 
                 player.update(time, &map);
+
+                if (map.passenger) |*passenger| {
+                    switch (passenger.state) {
+                        .waiting => {
+                            if (rl.Vector2Distance(player.pos, passenger.start_pos) < 20) {
+                                passenger.state = .in_car;
+                            }
+                        },
+                        .in_car => {
+                            if (rl.Vector2Distance(player.pos, passenger.end_pos) < 20) {
+                                passenger.state = .delivered;
+                            }
+                        },
+                        .delivered => {
+                            map.spawnPassenger();
+                            pickups += 1;
+                        },
+                    }
+                }
 
                 camera.zoom = 2;
 
@@ -82,28 +111,36 @@ pub fn main() !void {
 
                 rl.BeginMode2D(camera);
                 {
-                    map.draw(.none);
+                    map.draw(.none, is_debug);
 
                     player.draw();
                     // for (cars.items) |*car| {
                     //     car.draw();
                     // }
 
-                    if (player.next_node) |target_index| {
-                        const target = map.nodes.items[target_index];
-                        rl.DrawCircleV(target.pos, 10, rl.RED);
+                    if (is_debug) {
+                        if (player.next_node) |target_index| {
+                            const target = map.nodes.items[target_index];
+                            rl.DrawCircleV(target.pos, 10, rl.RED);
+                        }
                     }
                 }
                 rl.EndMode2D();
 
                 rl.DrawText(rl.TextFormat("vel: %.2f", rl.Vector2Length(player.vel)), 10, 10, 20, rl.WHITE);
                 rl.DrawText(rl.TextFormat("pos: %.f, %.f", player.pos.x, player.pos.y), 10, 35, 20, rl.WHITE);
+
+                const mouse_pos = rl.GetMousePosition();
+                rl.DrawText(rl.TextFormat("mouse: %.f, %.f", mouse_pos.x, mouse_pos.y), 10, 60, 20, rl.WHITE);
+
+                // TODO: add this to game UI overlay later
+                rl.DrawText(rl.TextFormat("pickups: %d", pickups), 10, 85, 20, rl.WHITE);
             },
             .editor => {
                 try editor.update(&camera, &map);
                 rl.BeginMode2D(camera);
                 {
-                    try editor.drawWorld(&camera, &map, map.tileset.texture);
+                    try editor.drawWorld(&camera, &map, map.tileset.texture, is_debug);
                 }
                 rl.EndMode2D();
                 editor.drawGui(map.tileset.texture);

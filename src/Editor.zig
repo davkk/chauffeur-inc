@@ -247,7 +247,7 @@ fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
     }
 }
 
-pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D) !void {
+pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D, is_debug: bool) !void {
     // draw grid
     const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
     const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
@@ -277,7 +277,7 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
     const mouse_world_pos = rl.GetScreenToWorld2D(mouse_screen_pos, camera.*);
     const mouse_pos = snapToGrid(mouse_world_pos);
 
-    map.draw(self.active_group);
+    map.draw(self.active_group, is_debug);
 
     switch (self.state) {
         .idle => {},
