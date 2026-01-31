@@ -12,6 +12,22 @@ const rl = @import("raylib.zig").rl;
 
 const Mode = enum { game, editor };
 
+fn clampToScreen(pos: rl.Vector2, padding: f32) rl.Vector2 {
+    const w: f32 = @floatFromInt(rl.GetScreenWidth());
+    const h: f32 = @floatFromInt(rl.GetScreenHeight());
+    return .{
+        .x = math.clamp(pos.x, 2 * padding, w - 2 * padding),
+        .y = math.clamp(pos.y, 2 * padding, h - 2 * padding),
+    };
+}
+
+fn isOnScreen(screen_pos: rl.Vector2) bool {
+    const w: f32 = @floatFromInt(rl.GetScreenWidth());
+    const h: f32 = @floatFromInt(rl.GetScreenHeight());
+    return screen_pos.x >= 0 and screen_pos.x <= w and
+        screen_pos.y >= 0 and screen_pos.y <= h;
+}
+
 pub fn main() !void {
     rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc");
     rl.SetTargetFPS(g.TARGET_FPS);
@@ -126,6 +142,26 @@ pub fn main() !void {
                     }
                 }
                 rl.EndMode2D();
+
+                if (map.passenger) |passenger| {
+                    const pos = rl.GetWorldToScreen2D(
+                        switch (passenger.state) {
+                            .waiting => passenger.start_pos,
+                            .in_car, .delivered => passenger.end_pos,
+                        },
+                        camera,
+                    );
+                    if (!isOnScreen(pos)) {
+                        const size = 32.0;
+                        const clamped = clampToScreen(pos, size / 2);
+                        rl.DrawRectanglePro(
+                            .{ .width = size, .height = size, .x = clamped.x, .y = clamped.y },
+                            .{ .x = 16, .y = 16 },
+                            0,
+                            rl.RED,
+                        );
+                    }
+                }
 
                 rl.DrawText(rl.TextFormat("vel: %.2f", rl.Vector2Length(player.vel)), 10, 10, 20, rl.WHITE);
                 rl.DrawText(rl.TextFormat("pos: %.f, %.f", player.pos.x, player.pos.y), 10, 35, 20, rl.WHITE);

@@ -186,10 +186,6 @@ pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
             0,
             color,
         );
-
-        var buf: [8]u8 = undefined;
-        const id_str = std.fmt.bufPrintZ(&buf, "{d}", .{node1.id}) catch "??";
-        rl.DrawText(@ptrCast(id_str), @intFromFloat(node1.pos.x), @intFromFloat(node1.pos.y), 20, rl.BLACK);
     }
 
     // draw edges
