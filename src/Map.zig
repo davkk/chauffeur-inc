@@ -48,7 +48,7 @@ pub const Sprite = struct {
 };
 
 /// start, end are inclusive
-fn randomPair(start: usize, end: usize) struct { usize, usize } {
+fn randPair(start: usize, end: usize) struct { usize, usize } {
     var a: usize = undefined;
     var b: usize = undefined;
     while (a == b) { // WARN: this can go forever, separate thread
@@ -58,23 +58,27 @@ fn randomPair(start: usize, end: usize) struct { usize, usize } {
     return .{ a, b };
 }
 
+fn randEdgePos() f32 {
+    return @min(0.1, @max(0.9, rand.float(f32)));
+}
+
 pub const Passenger = struct {
     start_pos: rl.Vector2,
     end_pos: rl.Vector2,
     state: enum { waiting, in_car, delivered },
 
     pub fn init(map: *Self) Passenger {
-        const edge_start_idx, const edge_end_idx = randomPair(0, map.edges.items.len - 1);
+        const edge_start_idx, const edge_end_idx = randPair(0, map.edges.items.len - 1);
 
         const edge_start = map.edges.items[edge_start_idx];
         const node_start_from = map.nodes.items[edge_start.from].pos;
         const node_start_to = map.nodes.items[edge_start.to].pos;
-        const start_pos = rl.Vector2Scale(rl.Vector2Subtract(node_start_to, node_start_from), 0.5);
+        const start_pos = rl.Vector2Scale(rl.Vector2Subtract(node_start_to, node_start_from), randEdgePos());
 
         const edge_end = map.edges.items[edge_end_idx];
         const node_end_from = map.nodes.items[edge_end.from].pos;
         const node_end_to = map.nodes.items[edge_end.to].pos;
-        const end_pos = rl.Vector2Scale(rl.Vector2Subtract(node_end_to, node_end_from), 0.5);
+        const end_pos = rl.Vector2Scale(rl.Vector2Subtract(node_end_to, node_end_from), randEdgePos());
 
         return .{
             .start_pos = rl.Vector2Add(node_start_from, start_pos),
@@ -241,7 +245,6 @@ pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
         }
 
         if (self.passenger) |passenger| {
-            std.debug.print("{any}\n", .{passenger.state});
             switch (passenger.state) {
                 .waiting => rl.DrawCircleV(passenger.start_pos, 10, rl.BLUE),
                 .in_car => rl.DrawCircleV(passenger.end_pos, 10, rl.BLUE),
