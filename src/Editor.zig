@@ -247,7 +247,7 @@ fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
     }
 }
 
-pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D, is_debug: bool) !void {
+fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D, is_debug: bool) !void {
     // draw grid
     const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
     const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
@@ -279,6 +279,7 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
 
     map.draw(self.active_group, is_debug);
 
+    // TODO: move that switch to separate function
     switch (self.state) {
         .idle => {},
         .eraser => {
@@ -445,7 +446,7 @@ pub fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: 
     }
 }
 
-pub fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
+fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
     const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
     const sidebar_x = g.SCREEN_WIDTH - sidebar_width;
     const sidebar_y = 0;
@@ -540,4 +541,14 @@ pub fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
             self.panel_expanded = true;
         }
     }
+}
+
+pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void {
+    rl.BeginMode2D(camera.*);
+    {
+        try self.drawWorld(camera, map, map.tileset.texture, is_debug);
+    }
+    rl.EndMode2D();
+
+    self.drawGui(map.tileset.texture);
 }
