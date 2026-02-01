@@ -44,7 +44,7 @@ pub fn main() !void {
             is_debug = !is_debug;
         }
         if (KEY_CTRL and KEY_SHIFT and rl.IsKeyPressed(rl.KEY_P)) {
-            map.spawnPassenger();
+            game.spawnPassenger(&map);
         }
 
         rl.BeginDrawing();

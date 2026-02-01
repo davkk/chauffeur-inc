@@ -1,13 +1,16 @@
 const std = @import("std");
-const rand = std.crypto.random;
-const math = std.math;
 
 const rl = @import("raylib.zig").rl;
-const vec2add = @import("raylib.zig").vec_add;
 const g = @import("globals.zig");
 
-const TextureGroupType = @import("Editor.zig").TextureGroupType;
 const Tileset = @import("Tileset.zig");
+
+pub const DrawMode = enum {
+    all,
+    tiles,
+    road,
+    sprites,
+};
 
 const FILE_NAME = "src/assets/map.map";
 
@@ -48,70 +51,6 @@ pub const Sprite = struct {
     }
 };
 
-/// start, end are inclusive
-fn randPair(start: usize, end: usize) struct { usize, usize } {
-    var a: usize = undefined;
-    var b: usize = undefined;
-    while (a == b) { // WARN: this can go forever, separate thread
-        a = rand.intRangeAtMost(usize, start, end);
-        b = rand.intRangeAtMost(usize, start, end);
-    }
-    return .{ a, b };
-}
-
-fn randEdgePos() f32 {
-    return math.clamp(rand.float(f32), 0.2, 0.8);
-}
-
-fn randSideOffset(pos1: *const rl.Vector2, pos2: *const rl.Vector2) rl.Vector2 {
-    const dist = rl.Vector2Normalize(rl.Vector2Subtract(pos1.*, pos2.*));
-    const perp: rl.Vector2 = .{ .x = dist.y, .y = -dist.x };
-    return if (rand.boolean())
-        rl.Vector2Scale(perp, g.TILE_SIZE)
-    else
-        rl.Vector2Scale(perp, -g.TILE_SIZE);
-}
-
-pub const Passenger = struct {
-    start_pos: rl.Vector2,
-    end_pos: rl.Vector2,
-    state: enum { waiting, in_car, delivered },
-
-    pub fn init(map: *Self) Passenger {
-        const edge_start_idx, const edge_end_idx = randPair(0, map.edges.items.len - 1);
-
-        const edge_start = map.edges.items[edge_start_idx];
-        const pos_start_from = map.nodes.items[edge_start.from].pos;
-        const pos_start_to = map.nodes.items[edge_start.to].pos;
-        const sideOffset = randSideOffset(&pos_start_from, &pos_start_to);
-        const start_pos = vec2add(&.{
-            pos_start_from,
-            rl.Vector2Scale(
-                rl.Vector2Subtract(pos_start_to, pos_start_from),
-                randEdgePos(),
-            ),
-            sideOffset,
-        });
-
-        const edge_end = map.edges.items[edge_end_idx];
-        const pos_end_from = map.nodes.items[edge_end.from].pos;
-        const pos_end_to = map.nodes.items[edge_end.to].pos;
-        const end_pos = rl.Vector2Add(
-            pos_end_from,
-            rl.Vector2Scale(
-                rl.Vector2Subtract(pos_end_to, pos_end_from),
-                randEdgePos(),
-            ),
-        );
-
-        return .{
-            .start_pos = start_pos,
-            .end_pos = end_pos,
-            .state = .waiting,
-        };
-    }
-};
-
 alloc: std.mem.Allocator,
 
 road_texture: [3]rl.Texture2D,
@@ -121,8 +60,6 @@ tiles: TileMap,
 nodes: std.array_list.Managed(Node),
 edges: std.array_list.Managed(Edge),
 sprites: std.array_list.Managed(Sprite),
-
-passenger: ?Passenger,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
@@ -158,7 +95,6 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
         .edges = std.array_list.Managed(Edge).fromOwnedSlice(alloc, loaded.edges),
         .sprites = std.array_list.Managed(Sprite).fromOwnedSlice(alloc, loaded.sprites),
-        .passenger = null,
     };
 }
 
@@ -170,12 +106,7 @@ pub fn deinit(self: *const Self) void {
     self.sprites.deinit();
 }
 
-// TODO: I hate that I pass active group here...
-pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
-    const tile_color = if (active_group == .none or active_group == .tiles) rl.WHITE else g.SEMI_TRANSPARENT;
-    const road_color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
-
-    // draw tiles
+pub fn drawTiles(self: *Self, draw_mode: DrawMode) void {
     for (0..self.tiles.len) |tile_y| {
         for (0..self.tiles[0].len) |tile_x| {
             const tile_id = self.tiles[tile_y][tile_x];
@@ -192,27 +123,27 @@ pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
                 },
                 .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
                 0,
-                tile_color,
+                if (draw_mode == .all or draw_mode == .tiles) rl.WHITE else g.SEMI_TRANSPARENT,
             );
         }
     }
+}
 
+pub fn drawRoads(self: *Self, draw_mode: DrawMode) void {
     // draw nodes
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
-        const color = if (active_group == .none or active_group == .road) rl.WHITE else g.SEMI_TRANSPARENT;
-
         rl.DrawTexturePro(
             self.road_texture[2],
             .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
             .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
             .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
             0,
-            color,
+            if (draw_mode == .all or draw_mode == .road) rl.WHITE else g.SEMI_TRANSPARENT,
         );
     }
-
     // draw edges
+    const road_color = if (draw_mode == .all or draw_mode == .road) rl.WHITE else g.SEMI_TRANSPARENT;
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
 
@@ -264,21 +195,9 @@ pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
             );
         }
     }
+}
 
-    if (self.passenger) |passenger| {
-        switch (passenger.state) {
-            .waiting => rl.DrawCircleV(passenger.start_pos, 10, rl.BLUE),
-            .in_car => rl.DrawCircleV(
-                passenger.end_pos,
-                1.5 * g.TILE_SIZE,
-                rl.ColorAlpha(rl.BLUE, 0.5),
-            ),
-            .delivered => {},
-        }
-    }
-
-    const sprite_color = if (active_group == .none or active_group == .sprites) rl.WHITE else g.SEMI_TRANSPARENT;
-
+pub fn drawSprites(self: *Self, draw_mode: DrawMode) void {
     for (self.sprites.items) |sprite| {
         const rect = g.SPRITES[sprite.sprite_id];
         rl.DrawTexturePro(
@@ -292,22 +211,18 @@ pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
             },
             .{ .x = rect.width / 2, .y = rect.height / 2 },
             0,
-            sprite_color,
+            if (draw_mode == .all or draw_mode == .sprites) rl.WHITE else g.SEMI_TRANSPARENT,
         );
-    }
-
-    if (is_debug) {
-        for (self.nodes.items) |*node| {
-            if (!node.active) continue;
-            var buf: [8]u8 = undefined;
-            const id_str = std.fmt.bufPrintZ(&buf, "{d}", .{node.id}) catch "??";
-            rl.DrawText(@ptrCast(id_str), @intFromFloat(node.pos.x), @intFromFloat(node.pos.y), 20, rl.BLACK);
-        }
     }
 }
 
-pub fn spawnPassenger(self: *Self) void {
-    self.passenger = Passenger.init(self);
+pub fn drawDebug(self: *Self) void {
+    for (self.nodes.items) |*node| {
+        if (!node.active) continue;
+        var buf: [8]u8 = undefined;
+        const id_str = std.fmt.bufPrintZ(&buf, "{d}", .{node.id}) catch "??";
+        rl.DrawText(@ptrCast(id_str), @intFromFloat(node.pos.x), @intFromFloat(node.pos.y), 20, rl.BLACK);
+    }
 }
 
 fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge, tiles: TileMap, sprites: []Sprite } {

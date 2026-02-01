@@ -1,25 +1,28 @@
 const std = @import("std");
 const math = std.math;
 
-const Map = @import("Map.zig");
-const Car = @import("Car.zig");
 const rl = @import("raylib.zig").rl;
 const g = @import("globals.zig");
+
+const Map = @import("Map.zig");
+const Car = @import("Car.zig");
+const Passenger = @import("Passenger.zig");
 
 const Self = @This();
 
 player: Car,
+passenger: ?Passenger,
 pickups: u32,
 
-pub fn init(map: *Map) Self {
+pub fn init(map: *const Map) Self {
     const init_node = map.nodes.items[0];
+
     var player = Car.init(true, init_node.pos.x, init_node.pos.y);
     player.curr_node = init_node.id;
 
-    map.spawnPassenger();
-
     return .{
         .player = player,
+        .passenger = Passenger.init(map),
         .pickups = 0,
     };
 }
@@ -44,12 +47,16 @@ fn isOnScreen(screen_pos: rl.Vector2) bool {
         screen_pos.y >= 0 and screen_pos.y <= h;
 }
 
-pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) void {
+pub fn spawnPassenger(self: *Self, map: *const Map) void {
+    self.passenger = Passenger.init(map);
+}
+
+pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
     const time = rl.GetFrameTime();
 
     self.player.update(time, map);
 
-    if (map.passenger) |*passenger| {
+    if (self.passenger) |*passenger| {
         switch (passenger.state) {
             .waiting => {
                 if (rl.Vector2Distance(self.player.pos, passenger.start_pos) <= g.PASSENGER_PICKUP_DISTANCE) {
@@ -62,8 +69,8 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) void {
                 }
             },
             .delivered => {
-                map.spawnPassenger();
                 self.pickups += 1;
+                self.spawnPassenger(map);
             },
         }
     }
@@ -85,7 +92,15 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) void {
 pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
     rl.BeginMode2D(camera.*);
     {
-        map.draw(.none, is_debug);
+        map.drawTiles(.all);
+        map.drawRoads(.all);
+
+        if (self.passenger) |*passenger| passenger.draw();
+
+        map.drawSprites(.all);
+        if (is_debug) {
+            map.drawDebug();
+        }
 
         self.player.draw();
 
@@ -98,7 +113,7 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
     }
     rl.EndMode2D();
 
-    if (map.passenger) |passenger| {
+    if (self.passenger) |passenger| {
         const pos = rl.GetWorldToScreen2D(
             switch (passenger.state) {
                 .waiting => passenger.start_pos,

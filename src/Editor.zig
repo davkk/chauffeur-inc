@@ -14,15 +14,8 @@ const ACTIVE_COLOR = rl.WHITE;
 const BAD_COLOR = rl.RED;
 const INACTIVE_COLOR = rl.GRAY;
 
-pub const TextureGroupType = enum {
-    none,
-    tiles,
-    road,
-    sprites,
-};
-
 const TextureGroup = struct {
-    type: TextureGroupType,
+    type: Map.DrawMode,
     tiles: []const rl.Rectangle,
 };
 
@@ -43,7 +36,7 @@ const Self = @This();
 state: State,
 active_tile_type: ?usize,
 active_node_id: ?usize,
-active_group: TextureGroupType,
+active_group: Map.DrawMode,
 group_expanded: [2]bool,
 panel_expanded: bool,
 
@@ -110,7 +103,7 @@ pub fn init() Self {
         .state = .idle,
         .active_node_id = null,
         .active_tile_type = null,
-        .active_group = .none,
+        .active_group = .all,
         .group_expanded = [_]bool{ true, true },
         .panel_expanded = true,
         .start_pos = null,
@@ -143,7 +136,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
             self.panel_expanded = !self.panel_expanded;
         } else if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
             self.active_node_id = null;
-            self.active_group = .none;
+            self.active_group = .all;
             self.active_tile_type = null;
         } else if (rl.IsKeyPressed(rl.KEY_V)) {
             self.state = .idle;
@@ -167,107 +160,6 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     if (!KEY_SHIFT and KEY_CTRL and rl.IsKeyPressed(rl.KEY_S)) { // save
         try map.saveToFile();
     }
-}
-
-fn getDirection(dx: f32, dy: f32) ?g.Direction {
-    if (dy < 0) return .up;
-    if (dx > 0) return .right;
-    if (dy > 0) return .down;
-    if (dx < 0) return .left;
-    return null;
-}
-
-fn createNode(map: *Map, pos: rl.Vector2) !*Map.Node {
-    const node = Map.Node.init(pos, map.nodes.items.len);
-    try map.nodes.append(node);
-    return &map.nodes.items[map.nodes.items.len - 1];
-}
-
-fn connectNodes(node1: *Map.Node, node2: *Map.Node) void {
-    const dx = node2.pos.x - node1.pos.x;
-    const dy = node2.pos.y - node1.pos.y;
-    const dir = getDirection(dx, dy) orelse return;
-
-    const dir_idx: usize = @intFromEnum(dir);
-    const opposite_idx: usize = (dir_idx + 2) % 4;
-
-    if (node1.edges[dir_idx] != null or node2.edges[opposite_idx] != null) {
-        return;
-    }
-
-    node1.edges[dir_idx] = node2.id;
-    node2.edges[opposite_idx] = node1.id;
-}
-
-fn splitEdge(a: *Map.Node, b: *Map.Node, new_node: *Map.Node) void {
-    const dx = b.pos.x - a.pos.x;
-    const dy = b.pos.y - a.pos.y;
-    const dir = getDirection(dx, dy) orelse return;
-
-    const dir_idx: usize = @intFromEnum(dir);
-    const opposite_idx: usize = (dir_idx + 2) % 4;
-
-    a.edges[dir_idx] = null;
-    b.edges[opposite_idx] = null;
-
-    a.edges[dir_idx] = new_node.id;
-    b.edges[opposite_idx] = new_node.id;
-    new_node.edges[opposite_idx] = a.id;
-    new_node.edges[dir_idx] = b.id;
-}
-
-fn removeEdge(node1: *Map.Node, node2: *Map.Node) void {
-    for (node1.edges, 0..) |edge_id, idx| {
-        if (edge_id) |id| {
-            if (id == node2.id) {
-                node1.edges[idx] = null;
-                break;
-            }
-        }
-    }
-    for (node2.edges, 0..) |edge_id, idx| {
-        if (edge_id) |id| {
-            if (id == node1.id) {
-                node2.edges[idx] = null;
-                break;
-            }
-        }
-    }
-}
-
-fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
-    for (nodes) |*node| {
-        if (!node.active) continue;
-        if (node.id == node_id) continue;
-        for (node.edges, 0..) |edge_id, idx| {
-            if (edge_id == node_id) {
-                node.edges[idx] = null;
-            }
-        }
-    }
-}
-
-fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.Texture2D, is_debug: bool) !void {
-    // draw grid
-    const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
-    const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
-    const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
-    const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
-
-    var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
-    while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
-        const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
-        const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
-        const thickness: f32 = if (grid_x == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
-        rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
-    }
-    var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
-    while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
-        const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
-        const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
-        const thickness: f32 = if (grid_y == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
-        rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
-    }
 
     const mouse_screen_pos = rl.GetMousePosition();
     const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
@@ -277,9 +169,6 @@ fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.T
     const mouse_world_pos = rl.GetScreenToWorld2D(mouse_screen_pos, camera.*);
     const mouse_pos = snapToGrid(mouse_world_pos);
 
-    map.draw(self.active_group, is_debug);
-
-    // TODO: move that switch to separate function
     switch (self.state) {
         .idle => {},
         .eraser => {
@@ -368,7 +257,7 @@ fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.T
                     const curr_tex = g.SPRITES[sprite_id];
 
                     rl.DrawTexturePro(
-                        tileset_texture,
+                        map.tileset.texture,
                         curr_tex,
                         .{ .x = mouse_world_pos.x, .y = mouse_world_pos.y, .width = curr_tex.width, .height = curr_tex.height },
                         .{ .x = curr_tex.width / 2, .y = curr_tex.height / 2 },
@@ -383,7 +272,7 @@ fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.T
                 } else {
                     const curr_tex = g.TILE_DEFINITIONS[active_tile_id];
                     rl.DrawTexturePro(
-                        tileset_texture,
+                        map.tileset.texture,
                         curr_tex,
                         .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
                         .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
@@ -408,7 +297,7 @@ fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.T
                             var x = min_x;
                             while (x <= max_x) : (x += g.TILE_SIZE) {
                                 rl.DrawTexturePro(
-                                    tileset_texture,
+                                    map.tileset.texture,
                                     curr_tex,
                                     .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = curr_tex.width, .height = curr_tex.height },
                                     .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
@@ -443,6 +332,117 @@ fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, tileset_texture: rl.T
                 }
             }
         },
+    }
+}
+
+fn getDirection(dx: f32, dy: f32) ?g.Direction {
+    if (dy < 0) return .up;
+    if (dx > 0) return .right;
+    if (dy > 0) return .down;
+    if (dx < 0) return .left;
+    return null;
+}
+
+fn createNode(map: *Map, pos: rl.Vector2) !*Map.Node {
+    const node = Map.Node.init(pos, map.nodes.items.len);
+    try map.nodes.append(node);
+    return &map.nodes.items[map.nodes.items.len - 1];
+}
+
+fn connectNodes(node1: *Map.Node, node2: *Map.Node) void {
+    // TODO: should also update map.edges
+    const dx = node2.pos.x - node1.pos.x;
+    const dy = node2.pos.y - node1.pos.y;
+    const dir = getDirection(dx, dy) orelse return;
+
+    const dir_idx: usize = @intFromEnum(dir);
+    const opposite_idx: usize = (dir_idx + 2) % 4;
+
+    if (node1.edges[dir_idx] != null or node2.edges[opposite_idx] != null) {
+        return;
+    }
+
+    node1.edges[dir_idx] = node2.id;
+    node2.edges[opposite_idx] = node1.id;
+}
+
+fn splitEdge(a: *Map.Node, b: *Map.Node, new_node: *Map.Node) void {
+    // TODO: should also update map.edges
+    const dx = b.pos.x - a.pos.x;
+    const dy = b.pos.y - a.pos.y;
+    const dir = getDirection(dx, dy) orelse return;
+
+    const dir_idx: usize = @intFromEnum(dir);
+    const opposite_idx: usize = (dir_idx + 2) % 4;
+
+    a.edges[dir_idx] = null;
+    b.edges[opposite_idx] = null;
+
+    a.edges[dir_idx] = new_node.id;
+    b.edges[opposite_idx] = new_node.id;
+    new_node.edges[opposite_idx] = a.id;
+    new_node.edges[dir_idx] = b.id;
+}
+
+fn removeEdge(node1: *Map.Node, node2: *Map.Node) void {
+    // TODO: should also update map.edges
+    for (node1.edges, 0..) |edge_id, idx| {
+        if (edge_id) |id| {
+            if (id == node2.id) {
+                node1.edges[idx] = null;
+                break;
+            }
+        }
+    }
+    for (node2.edges, 0..) |edge_id, idx| {
+        if (edge_id) |id| {
+            if (id == node1.id) {
+                node2.edges[idx] = null;
+                break;
+            }
+        }
+    }
+}
+
+fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
+    // TODO: should also update map.edges
+    for (nodes) |*node| {
+        if (!node.active) continue;
+        if (node.id == node_id) continue;
+        for (node.edges, 0..) |edge_id, idx| {
+            if (edge_id == node_id) {
+                node.edges[idx] = null;
+            }
+        }
+    }
+}
+
+fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void {
+    map.drawTiles(self.active_group);
+    map.drawRoads(self.active_group);
+    map.drawSprites(self.active_group);
+    if (is_debug) {
+        map.drawDebug();
+    }
+
+    const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
+    const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
+    const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
+    const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
+
+    var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
+    while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
+        const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
+        const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
+        const thickness: f32 = if (grid_x == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
+        rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
+    }
+    var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
+    while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
+        const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
+        const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
+        const thickness: f32 = if (grid_y == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
+        rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
     }
 }
 
@@ -546,7 +546,7 @@ fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
 pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void {
     rl.BeginMode2D(camera.*);
     {
-        try self.drawWorld(camera, map, map.tileset.texture, is_debug);
+        try self.drawWorld(camera, map, is_debug);
     }
     rl.EndMode2D();
 
