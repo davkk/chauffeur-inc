@@ -92,12 +92,12 @@ pub fn main() !void {
                 if (map.passenger) |*passenger| {
                     switch (passenger.state) {
                         .waiting => {
-                            if (rl.Vector2Distance(player.pos, passenger.start_pos) < 20) {
+                            if (rl.Vector2Distance(player.pos, passenger.start_pos) <= g.PASSENGER_PICKUP_DISTANCE) {
                                 passenger.state = .in_car;
                             }
                         },
                         .in_car => {
-                            if (rl.Vector2Distance(player.pos, passenger.end_pos) < 20) {
+                            if (rl.Vector2Distance(player.pos, passenger.end_pos) <= g.PASSENGER_PICKUP_DISTANCE and player.speed == 0) {
                                 passenger.state = .delivered;
                             }
                         },

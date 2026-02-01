@@ -3,6 +3,7 @@ const rand = std.crypto.random;
 const math = std.math;
 
 const rl = @import("raylib.zig").rl;
+const vec2add = @import("raylib.zig").vec_add;
 const g = @import("globals.zig");
 
 const TextureGroupType = @import("Editor.zig").TextureGroupType;
@@ -59,7 +60,16 @@ fn randPair(start: usize, end: usize) struct { usize, usize } {
 }
 
 fn randEdgePos() f32 {
-    return @min(0.1, @max(0.9, rand.float(f32)));
+    return math.clamp(rand.float(f32), 0.2, 0.8);
+}
+
+fn randSideOffset(pos1: *const rl.Vector2, pos2: *const rl.Vector2) rl.Vector2 {
+    const dist = rl.Vector2Normalize(rl.Vector2Subtract(pos1.*, pos2.*));
+    const perp: rl.Vector2 = .{ .x = dist.y, .y = -dist.x };
+    return if (rand.boolean())
+        rl.Vector2Scale(perp, g.TILE_SIZE)
+    else
+        rl.Vector2Scale(perp, -g.TILE_SIZE);
 }
 
 pub const Passenger = struct {
@@ -71,18 +81,32 @@ pub const Passenger = struct {
         const edge_start_idx, const edge_end_idx = randPair(0, map.edges.items.len - 1);
 
         const edge_start = map.edges.items[edge_start_idx];
-        const node_start_from = map.nodes.items[edge_start.from].pos;
-        const node_start_to = map.nodes.items[edge_start.to].pos;
-        const start_pos = rl.Vector2Scale(rl.Vector2Subtract(node_start_to, node_start_from), randEdgePos());
+        const pos_start_from = map.nodes.items[edge_start.from].pos;
+        const pos_start_to = map.nodes.items[edge_start.to].pos;
+        const sideOffset = randSideOffset(&pos_start_from, &pos_start_to);
+        const start_pos = vec2add(&.{
+            pos_start_from,
+            rl.Vector2Scale(
+                rl.Vector2Subtract(pos_start_to, pos_start_from),
+                randEdgePos(),
+            ),
+            sideOffset,
+        });
 
         const edge_end = map.edges.items[edge_end_idx];
-        const node_end_from = map.nodes.items[edge_end.from].pos;
-        const node_end_to = map.nodes.items[edge_end.to].pos;
-        const end_pos = rl.Vector2Scale(rl.Vector2Subtract(node_end_to, node_end_from), randEdgePos());
+        const pos_end_from = map.nodes.items[edge_end.from].pos;
+        const pos_end_to = map.nodes.items[edge_end.to].pos;
+        const end_pos = rl.Vector2Add(
+            pos_end_from,
+            rl.Vector2Scale(
+                rl.Vector2Subtract(pos_end_to, pos_end_from),
+                randEdgePos(),
+            ),
+        );
 
         return .{
-            .start_pos = rl.Vector2Add(node_start_from, start_pos),
-            .end_pos = rl.Vector2Add(node_end_from, end_pos),
+            .start_pos = start_pos,
+            .end_pos = end_pos,
             .state = .waiting,
         };
     }
@@ -239,13 +263,17 @@ pub fn draw(self: *Self, active_group: TextureGroupType, is_debug: bool) void {
                 road_color,
             );
         }
+    }
 
-        if (self.passenger) |passenger| {
-            switch (passenger.state) {
-                .waiting => rl.DrawCircleV(passenger.start_pos, 10, rl.BLUE),
-                .in_car => rl.DrawCircleV(passenger.end_pos, 10, rl.BLUE),
-                .delivered => {},
-            }
+    if (self.passenger) |passenger| {
+        switch (passenger.state) {
+            .waiting => rl.DrawCircleV(passenger.start_pos, 10, rl.BLUE),
+            .in_car => rl.DrawCircleV(
+                passenger.end_pos,
+                1.5 * g.TILE_SIZE,
+                rl.ColorAlpha(rl.BLUE, 0.5),
+            ),
+            .delivered => {},
         }
     }
 
