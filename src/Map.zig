@@ -21,7 +21,7 @@ const Self = @This();
 pub const Node = struct {
     pos: rl.Vector2,
     id: usize,
-    active: bool = true,
+    active: bool,
     edges: [4]?usize,
 
     pub fn init(pos: rl.Vector2, id: usize) Node {
@@ -48,6 +48,40 @@ pub const Sprite = struct {
             .pos = pos,
             .sprite_id = sprite_id,
         };
+    }
+};
+
+pub const CellIterator = struct {
+    min_x: i64,
+    max_x: i64,
+    min_y: i64,
+    max_y: i64,
+    current_y: i64,
+    current_x: i64,
+
+    pub fn init(start: *const rl.Vector2, end: *const rl.Vector2) @This() {
+        const min_x: i64 = @intFromFloat(@min(start.x, end.x));
+        const max_x: i64 = @intFromFloat(@max(start.x, end.x));
+        const min_y: i64 = @intFromFloat(@min(start.y, end.y));
+        const max_y: i64 = @intFromFloat(@max(start.y, end.y));
+        return .{
+            .min_x = min_x,
+            .max_x = max_x,
+            .min_y = min_y,
+            .max_y = max_y,
+            .current_y = min_y,
+            .current_x = min_x - g.TILE_SIZE,
+        };
+    }
+
+    pub fn next(self: *@This()) ?rl.Vector2 {
+        self.current_x += g.TILE_SIZE;
+        if (self.current_x > self.max_x) {
+            self.current_x = self.min_x;
+            self.current_y += g.TILE_SIZE;
+            if (self.current_y > self.max_y) return null;
+        }
+        return .{ .x = @floatFromInt(self.current_x), .y = @floatFromInt(self.current_y) };
     }
 };
 

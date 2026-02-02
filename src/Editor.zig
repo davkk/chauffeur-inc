@@ -31,72 +31,29 @@ pub const State = enum {
     fill,
 };
 
+const Hovered = union(enum) {
+    none,
+    node: *Map.Node,
+    edge: *Map.Edge,
+    tile: usize,
+};
+
 const Self = @This();
 
 state: State,
+
+mouse_pos: rl.Vector2,
+hovered: Hovered,
+
 active_tile_type: ?usize,
 active_node_id: ?usize,
 active_group: Map.DrawMode,
+
 group_expanded: [2]bool,
 panel_expanded: bool,
 
 start_pos: ?rl.Vector2,
 end_pos: ?rl.Vector2,
-
-fn hoveredNode(mouse_pos: rl.Vector2, nodes: []Map.Node) ?*Map.Node {
-    // TODO: use quad tree in the future, probably
-    for (nodes) |*node| {
-        if (!node.active) continue;
-        if (rl.CheckCollisionPointCircle(mouse_pos, node.pos, 10)) {
-            return node;
-        }
-    }
-    return null;
-}
-
-fn hoveredEdge(mouse_pos: rl.Vector2, nodes: []Map.Node) ?struct { *Map.Node, *Map.Node } {
-    for (nodes) |*node1| {
-        if (!node1.active) continue;
-        for (node1.edges) |edge_id| {
-            if (edge_id == null) continue;
-            if (node1.id > edge_id.?) continue;
-
-            const node2 = &nodes[edge_id.?];
-            if (!node2.active) continue;
-
-            if (rl.CheckCollisionPointLine(mouse_pos, node1.pos, node2.pos, 10)) {
-                return .{ node1, node2 };
-            }
-        }
-    }
-    return null;
-}
-
-fn hoveredTile(mouse_pos: rl.Vector2, tiles: Map.TileMap) ?usize {
-    const mx: i32 = @intFromFloat(mouse_pos.x);
-    const my: i32 = @intFromFloat(mouse_pos.y);
-    const col = @divFloor(mx, g.TILE_SIZE);
-    const row = @divFloor(my, g.TILE_SIZE);
-    if (row >= 0 and col >= 0 and row < tiles.len and col < tiles[0].len) {
-        const tile_id = tiles[@intCast(row)][@intCast(col)];
-        if (tile_id != 0) {
-            return tile_id;
-        }
-    }
-    return null;
-}
-
-fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
-    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
-    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
-    return .{ .x = snappedX, .y = snappedY };
-}
-
-fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
-    const dx = pos2.x - pos1.x;
-    const dy = pos2.y - pos1.y;
-    return dx == 0 or dy == 0;
-}
 
 pub fn init() Self {
     return .{
@@ -104,6 +61,8 @@ pub fn init() Self {
         .active_node_id = null,
         .active_tile_type = null,
         .active_group = .all,
+        .mouse_pos = rl.Vector2Zero(),
+        .hovered = .none,
         .group_expanded = [_]bool{ true, true },
         .panel_expanded = true,
         .start_pos = null,
@@ -140,12 +99,24 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
             self.active_tile_type = null;
         } else if (rl.IsKeyPressed(rl.KEY_V)) {
             self.state = .idle;
+            self.active_group = .all;
+            self.start_pos = null;
+            self.end_pos = null;
         } else if (rl.IsKeyPressed(rl.KEY_E)) {
             self.state = .eraser;
+            self.active_group = .all;
+            self.start_pos = null;
+            self.end_pos = null;
         } else if (rl.IsKeyPressed(rl.KEY_N)) {
             self.state = .add_node;
+            self.active_group = .road;
+            self.start_pos = null;
+            self.end_pos = null;
         } else if (rl.IsKeyPressed(rl.KEY_F)) {
             self.state = .fill;
+            self.active_group = .all;
+            self.start_pos = null;
+            self.end_pos = null;
         } else if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP)) {
             camera.target.y = @max(camera.target.y - 30, 0);
         } else if (rl.IsKeyDown(rl.KEY_S) or rl.IsKeyDown(rl.KEY_DOWN)) {
@@ -162,177 +133,108 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     }
 
     const mouse_screen_pos = rl.GetMousePosition();
+
     const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
     const sidebar_rect = rl.Rectangle{ .x = g.SCREEN_WIDTH - sidebar_width, .y = 0, .width = sidebar_width, .height = g.SCREEN_HEIGHT };
-    const mouse_over_ui = rl.CheckCollisionPointRec(mouse_screen_pos, sidebar_rect);
 
     const mouse_world_pos = rl.GetScreenToWorld2D(mouse_screen_pos, camera.*);
-    const mouse_pos = snapToGrid(mouse_world_pos);
+    const mouse_over_ui = rl.CheckCollisionPointRec(mouse_screen_pos, sidebar_rect);
 
-    switch (self.state) {
-        .idle => {},
-        .eraser => {
-            self.active_node_id = null;
+    self.mouse_pos = snapToGrid(mouse_world_pos);
+    self.hovered = if (!mouse_over_ui) self.detectHover(map) else .none;
 
-            if (hoveredNode(mouse_pos, map.nodes.items)) |node1| {
-                rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    node1.active = false;
-                    removeAllEdgesToNode(node1.id, map.nodes.items);
-                }
-            }
-
-            if (hoveredEdge(mouse_pos, map.nodes.items)) |edge| {
-                const node1, const node2 = edge;
-                rl.DrawLineEx(node1.pos, node2.pos, LINE_THICKNESS, ACTIVE_COLOR);
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    removeEdge(node1, node2);
-                }
-            }
-
-            if (hoveredTile(mouse_pos, map.tiles)) |_| {
-                rl.DrawRectanglePro(
-                    .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                    0,
-                    g.SEMI_TRANSPARENT,
-                );
-                if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    const mx: i32 = @intFromFloat(mouse_pos.x);
-                    const my: i32 = @intFromFloat(mouse_pos.y);
-                    const col = @divFloor(mx, g.TILE_SIZE);
-                    const row = @divFloor(my, g.TILE_SIZE);
-                    if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
-                        map.tiles[@intCast(row)][@intCast(col)] = 0;
-                    }
-                }
-            }
-        },
-        .add_node => {
-            if (self.active_node_id) |node_id| {
-                var active_node = &map.nodes.items[node_id];
-                rl.DrawLineEx(
-                    active_node.pos,
-                    mouse_pos,
-                    LINE_THICKNESS,
-                    if (isValidEdge(active_node.pos, mouse_pos)) ACTIVE_COLOR else BAD_COLOR,
-                );
-                rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
-
-                if (!mouse_over_ui and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, mouse_pos)) {
-                    var new_node: ?*Map.Node = if (hoveredNode(mouse_pos, map.nodes.items)) |node2| node2 else null;
-                    if (new_node == null) {
-                        new_node = try createNode(map, mouse_pos);
-                        if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
-                            const a, const b = split_edge;
-                            splitEdge(a, b, new_node.?);
-                        }
-                    }
-                    active_node = &map.nodes.items[node_id]; // re-lookup active node after append to nodes ArrayList
-                    connectNodes(active_node, new_node.?);
-                    self.active_node_id = new_node.?.id;
-                }
-            } else if (hoveredNode(mouse_pos, map.nodes.items)) |node1| { // add to existing node
-                rl.DrawCircleV(node1.pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    self.active_node_id = node1.id;
-                }
-            } else {
-                rl.DrawCircleV(mouse_pos, 10, ACTIVE_COLOR);
-                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                    const new_node = try createNode(map, mouse_pos);
-                    if (hoveredEdge(mouse_pos, map.nodes.items)) |split_edge| {
-                        const a, const b = split_edge;
-                        splitEdge(a, b, new_node);
-                    }
-                    self.active_node_id = new_node.id;
-                }
-            }
-        },
-        .fill => {
-            rl.DrawRectanglePro(.{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE }, .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 }, 0, g.SEMI_TRANSPARENT);
-            if (self.active_tile_type) |active_tile_id| {
-                if (self.active_group == .sprites) {
-                    const sprite_id = active_tile_id - g.TILES.len;
-                    const curr_tex = g.SPRITES[sprite_id];
-
-                    rl.DrawTexturePro(
-                        map.tileset.texture,
-                        curr_tex,
-                        .{ .x = mouse_world_pos.x, .y = mouse_world_pos.y, .width = curr_tex.width, .height = curr_tex.height },
-                        .{ .x = curr_tex.width / 2, .y = curr_tex.height / 2 },
-                        0,
-                        g.SEMI_TRANSPARENT,
-                    );
-
-                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and !mouse_over_ui) {
-                        const sprite = Map.Sprite.init(mouse_world_pos, sprite_id);
-                        try map.sprites.append(sprite);
-                    }
-                } else {
-                    const curr_tex = g.TILE_DEFINITIONS[active_tile_id];
-                    rl.DrawTexturePro(
-                        map.tileset.texture,
-                        curr_tex,
-                        .{ .x = mouse_pos.x, .y = mouse_pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-                        .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                        0,
-                        rl.WHITE,
-                    );
-
-                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                        self.start_pos = mouse_pos;
-                    }
-
-                    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
-                        self.end_pos = mouse_pos;
-
-                        const min_x: i64 = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
-                        const max_x: i64 = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
-                        const min_y: i64 = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
-                        const max_y: i64 = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
-
-                        var y = min_y;
-                        while (y <= max_y) : (y += g.TILE_SIZE) {
-                            var x = min_x;
-                            while (x <= max_x) : (x += g.TILE_SIZE) {
-                                rl.DrawTexturePro(
-                                    map.tileset.texture,
-                                    curr_tex,
-                                    .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = curr_tex.width, .height = curr_tex.height },
-                                    .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
-                                    0,
-                                    g.SEMI_TRANSPARENT,
-                                );
-                            }
-                        }
-                    }
-
-                    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
-                        const min_x: i64 = @intFromFloat(@min(self.start_pos.?.x, self.end_pos.?.x));
-                        const max_x: i64 = @intFromFloat(@max(self.start_pos.?.x, self.end_pos.?.x));
-                        const min_y: i64 = @intFromFloat(@min(self.start_pos.?.y, self.end_pos.?.y));
-                        const max_y: i64 = @intFromFloat(@max(self.start_pos.?.y, self.end_pos.?.y));
-
-                        var y = min_y;
-                        while (y <= max_y) : (y += g.TILE_SIZE) {
-                            var x = min_x;
-                            while (x <= max_x) : (x += g.TILE_SIZE) {
-                                const row = @divFloor(y, g.TILE_SIZE);
-                                const col = @divFloor(x, g.TILE_SIZE);
-                                if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
-                                    map.tiles[@intCast(row)][@intCast(col)] = active_tile_id;
-                                }
-                            }
-                        }
-
-                        self.start_pos = null;
-                        self.end_pos = null;
-                    }
-                }
-            }
-        },
+    if (self.active_group != .road and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+        self.start_pos = self.mouse_pos;
+        self.active_group = switch (self.hovered) {
+            .edge, .node => .all,
+            .tile, .none => .tiles,
+        };
     }
+    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
+        self.end_pos = self.mouse_pos;
+    }
+
+    try self.handleState(map, camera);
+}
+
+pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void {
+    rl.BeginMode2D(camera.*);
+    {
+        try self.drawWorld(camera, map, is_debug);
+        self.drawEditorIndicators(map);
+    }
+    rl.EndMode2D();
+
+    self.drawGui(map.tileset.texture);
+}
+
+fn hoveredNode(self: *const Self, nodes: []Map.Node) ?*Map.Node {
+    // TODO: use quad tree in the future, probably
+    for (nodes) |*node| {
+        if (!node.active) continue;
+        if (rl.CheckCollisionPointCircle(self.mouse_pos, node.pos, 10)) {
+            return node;
+        }
+    }
+    return null;
+}
+
+fn hoveredEdge(self: *const Self, nodes: []Map.Node, edges: []Map.Edge) ?*Map.Edge {
+    for (edges) |*edge| {
+        const node1 = &nodes[edge.from];
+        const node2 = &nodes[edge.to];
+
+        if (!node1.active or !node2.active) continue;
+        if (node1.id > node2.id) continue;
+
+        if (rl.CheckCollisionPointLine(self.mouse_pos, node1.pos, node2.pos, 10)) {
+            return edge;
+        }
+    }
+    return null;
+}
+
+fn hoveredTile(self: *const Self, tiles: Map.TileMap) ?usize {
+    const mx: i32 = @intFromFloat(self.mouse_pos.x);
+    const my: i32 = @intFromFloat(self.mouse_pos.y);
+    const col = @divFloor(mx, g.TILE_SIZE);
+    const row = @divFloor(my, g.TILE_SIZE);
+    if (row >= 0 and col >= 0 and row < tiles.len and col < tiles[0].len) {
+        const tile_id = tiles[@intCast(row)][@intCast(col)];
+        if (tile_id != 0) {
+            return tile_id;
+        }
+    }
+    return null;
+}
+
+fn detectHover(self: *const Self, map: *const Map) Hovered {
+    if (self.active_group == .all or self.active_group == .road) {
+        if (self.hoveredNode(map.nodes.items)) |node| {
+            return .{ .node = node };
+        }
+        if (self.hoveredEdge(map.nodes.items, map.edges.items)) |edge| {
+            return .{ .edge = edge };
+        }
+    }
+    if (self.active_group == .all or self.active_group == .tiles) {
+        if (self.hoveredTile(map.tiles)) |tile_id| {
+            return .{ .tile = tile_id };
+        }
+    }
+    return .none;
+}
+
+fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
+    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
+    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
+    return .{ .x = snappedX, .y = snappedY };
+}
+
+fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
+    const dx = pos2.x - pos1.x;
+    const dy = pos2.y - pos1.y;
+    return dx == 0 or dy == 0;
 }
 
 fn getDirection(dx: f32, dy: f32) ?g.Direction {
@@ -350,7 +252,7 @@ fn createNode(map: *Map, pos: rl.Vector2) !*Map.Node {
 }
 
 fn connectNodes(node1: *Map.Node, node2: *Map.Node) void {
-    // TODO: should also update map.edges
+    // FIXME: should also update map.edges
     const dx = node2.pos.x - node1.pos.x;
     const dy = node2.pos.y - node1.pos.y;
     const dir = getDirection(dx, dy) orelse return;
@@ -366,26 +268,26 @@ fn connectNodes(node1: *Map.Node, node2: *Map.Node) void {
     node2.edges[opposite_idx] = node1.id;
 }
 
-fn splitEdge(a: *Map.Node, b: *Map.Node, new_node: *Map.Node) void {
-    // TODO: should also update map.edges
-    const dx = b.pos.x - a.pos.x;
-    const dy = b.pos.y - a.pos.y;
+fn splitEdge(node1: *Map.Node, node2: *Map.Node, new_node: *Map.Node) void {
+    // FIXME: should also update map.edges
+    const dx = node2.pos.x - node1.pos.x;
+    const dy = node2.pos.y - node1.pos.y;
     const dir = getDirection(dx, dy) orelse return;
 
     const dir_idx: usize = @intFromEnum(dir);
     const opposite_idx: usize = (dir_idx + 2) % 4;
 
-    a.edges[dir_idx] = null;
-    b.edges[opposite_idx] = null;
+    node1.edges[dir_idx] = null;
+    node2.edges[opposite_idx] = null;
 
-    a.edges[dir_idx] = new_node.id;
-    b.edges[opposite_idx] = new_node.id;
-    new_node.edges[opposite_idx] = a.id;
-    new_node.edges[dir_idx] = b.id;
+    node1.edges[dir_idx] = new_node.id;
+    node2.edges[opposite_idx] = new_node.id;
+    new_node.edges[opposite_idx] = node1.id;
+    new_node.edges[dir_idx] = node2.id;
 }
 
 fn removeEdge(node1: *Map.Node, node2: *Map.Node) void {
-    // TODO: should also update map.edges
+    // FIXME: should also update map.edges
     for (node1.edges, 0..) |edge_id, idx| {
         if (edge_id) |id| {
             if (id == node2.id) {
@@ -405,7 +307,7 @@ fn removeEdge(node1: *Map.Node, node2: *Map.Node) void {
 }
 
 fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
-    // TODO: should also update map.edges
+    // FIXME: should also update map.edges
     for (nodes) |*node| {
         if (!node.active) continue;
         if (node.id == node_id) continue;
@@ -414,6 +316,169 @@ fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
                 node.edges[idx] = null;
             }
         }
+    }
+}
+
+fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
+    switch (self.state) {
+        .idle => {},
+        .eraser => {
+            self.active_node_id = null;
+            switch (self.hovered) {
+                .node => {
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                        self.hovered.node.active = false;
+                        removeAllEdgesToNode(self.hovered.node.id, map.nodes.items);
+                        self.start_pos = null;
+                        self.end_pos = null;
+                        self.active_group = .all;
+                    }
+                },
+                .edge => {
+                    const node1 = &map.nodes.items[self.hovered.edge.from];
+                    const node2 = &map.nodes.items[self.hovered.edge.to];
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                        removeEdge(node1, node2);
+                        self.start_pos = null;
+                        self.end_pos = null;
+                        self.active_group = .all;
+                    }
+                },
+                .none, .tile => {
+                    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
+                        var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
+                        while (iterCells.next()) |*cell| {
+                            const row = @divFloor(cell.y, g.TILE_SIZE);
+                            const col = @divFloor(cell.x, g.TILE_SIZE);
+                            if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
+                                map.tiles[@intFromFloat(row)][@intFromFloat(col)] = 0;
+                            }
+                        }
+                        self.start_pos = null;
+                        self.end_pos = null;
+                        self.active_group = .all;
+                    }
+                },
+            }
+        },
+        .add_node => {
+            if (self.active_node_id) |node_id| {
+                var active_node = &map.nodes.items[node_id];
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, self.mouse_pos)) {
+                    var new_node = if (self.hovered == .node) self.hovered.node else null;
+                    if (new_node == null) {
+                        new_node = try createNode(map, self.mouse_pos);
+                        if (self.hovered == .edge) {
+                            const node1 = &map.nodes.items[self.hovered.edge.from];
+                            const node2 = &map.nodes.items[self.hovered.edge.to];
+                            splitEdge(node1, node2, new_node.?);
+                        }
+                    }
+                    active_node = &map.nodes.items[node_id]; // re-lookup active node after append to nodes ArrayList
+                    connectNodes(active_node, new_node.?);
+                    self.active_node_id = new_node.?.id;
+                }
+            } else if (self.hovered == .node) { // add to existing node
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                    self.active_node_id = self.hovered.node.id;
+                }
+            } else {
+                if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                    const new_node = try createNode(map, self.mouse_pos);
+                    if (self.hovered == .edge) {
+                        const node1 = &map.nodes.items[self.hovered.edge.from];
+                        const node2 = &map.nodes.items[self.hovered.edge.to];
+                        splitEdge(node1, node2, new_node);
+                    }
+                    self.active_node_id = new_node.id;
+                }
+            }
+        },
+        .fill => {
+            if (self.active_tile_type) |active_tile_id| {
+                if (self.active_group == .sprites) {
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                        const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
+                        const sprite_id = active_tile_id - g.TILES.len;
+                        const sprite = Map.Sprite.init(mouse_world_pos, sprite_id);
+                        try map.sprites.append(sprite);
+                    }
+                } else if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
+                    var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
+                    while (iterCells.next()) |*cell| {
+                        const row = @divFloor(cell.y, g.TILE_SIZE);
+                        const col = @divFloor(cell.x, g.TILE_SIZE);
+                        if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
+                            map.tiles[@intFromFloat(row)][@intFromFloat(col)] = active_tile_id;
+                        }
+                    }
+                    self.start_pos = null;
+                    self.end_pos = null;
+                }
+            } else if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
+                // TODO: figure out better way to avoid repetition
+                self.start_pos = null;
+                self.end_pos = null;
+            }
+        },
+    }
+}
+
+fn drawCellHighlight(pos: *const rl.Vector2) void {
+    rl.DrawRectanglePro(
+        .{ .x = pos.x, .y = pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
+        .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+        0,
+        g.SEMI_TRANSPARENT,
+    );
+}
+
+fn drawEditorIndicators(self: *const Self, map: *const Map) void {
+    drawCellHighlight(&self.mouse_pos);
+
+    switch (self.state) {
+        .idle => {},
+        .eraser => {
+            switch (self.hovered) {
+                .node => {},
+                .edge => {
+                    const node1 = &map.nodes.items[self.hovered.edge.from];
+                    const node2 = &map.nodes.items[self.hovered.edge.to];
+                    var iterCells = Map.CellIterator.init(&node1.pos, &node2.pos);
+                    while (iterCells.next()) |*cell| {
+                        drawCellHighlight(cell);
+                    }
+                },
+                .none, .tile => {
+                    if (self.start_pos != null and self.end_pos != null) {
+                        var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
+                        while (iterCells.next()) |*cell| {
+                            drawCellHighlight(cell);
+                        }
+                    }
+                },
+            }
+        },
+        .add_node => {
+            if (self.active_node_id) |node_id| {
+                const active_node = map.nodes.items[node_id];
+                drawCellHighlight(&active_node.pos);
+                if (isValidEdge(active_node.pos, self.mouse_pos)) {
+                    var iterCells = Map.CellIterator.init(&active_node.pos, &self.mouse_pos);
+                    while (iterCells.next()) |*cell| {
+                        drawCellHighlight(cell);
+                    }
+                }
+            }
+        },
+        .fill => {
+            if (self.start_pos != null and self.end_pos != null) {
+                var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
+                while (iterCells.next()) |*cell| {
+                    drawCellHighlight(cell);
+                }
+            }
+        },
     }
 }
 
@@ -541,14 +606,4 @@ fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
             self.panel_expanded = true;
         }
     }
-}
-
-pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void {
-    rl.BeginMode2D(camera.*);
-    {
-        try self.drawWorld(camera, map, is_debug);
-    }
-    rl.EndMode2D();
-
-    self.drawGui(map.tileset.texture);
 }
