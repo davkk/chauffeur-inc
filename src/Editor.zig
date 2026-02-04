@@ -237,88 +237,6 @@ fn isValidEdge(pos1: rl.Vector2, pos2: rl.Vector2) bool {
     return dx == 0 or dy == 0;
 }
 
-fn getDirection(dx: f32, dy: f32) ?g.Direction {
-    if (dy < 0) return .up;
-    if (dx > 0) return .right;
-    if (dy > 0) return .down;
-    if (dx < 0) return .left;
-    return null;
-}
-
-fn createNode(map: *Map, pos: rl.Vector2) !*Map.Node {
-    const node = Map.Node.init(pos, map.nodes.items.len);
-    try map.nodes.append(node);
-    return &map.nodes.items[map.nodes.items.len - 1];
-}
-
-fn connectNodes(node1: *Map.Node, node2: *Map.Node) void {
-    // FIXME: should also update map.edges
-    const dx = node2.pos.x - node1.pos.x;
-    const dy = node2.pos.y - node1.pos.y;
-    const dir = getDirection(dx, dy) orelse return;
-
-    const dir_idx: usize = @intFromEnum(dir);
-    const opposite_idx: usize = (dir_idx + 2) % 4;
-
-    if (node1.edges[dir_idx] != null or node2.edges[opposite_idx] != null) {
-        return;
-    }
-
-    node1.edges[dir_idx] = node2.id;
-    node2.edges[opposite_idx] = node1.id;
-}
-
-fn splitEdge(node1: *Map.Node, node2: *Map.Node, new_node: *Map.Node) void {
-    // FIXME: should also update map.edges
-    const dx = node2.pos.x - node1.pos.x;
-    const dy = node2.pos.y - node1.pos.y;
-    const dir = getDirection(dx, dy) orelse return;
-
-    const dir_idx: usize = @intFromEnum(dir);
-    const opposite_idx: usize = (dir_idx + 2) % 4;
-
-    node1.edges[dir_idx] = null;
-    node2.edges[opposite_idx] = null;
-
-    node1.edges[dir_idx] = new_node.id;
-    node2.edges[opposite_idx] = new_node.id;
-    new_node.edges[opposite_idx] = node1.id;
-    new_node.edges[dir_idx] = node2.id;
-}
-
-fn removeEdge(node1: *Map.Node, node2: *Map.Node) void {
-    // FIXME: should also update map.edges
-    for (node1.edges, 0..) |edge_id, idx| {
-        if (edge_id) |id| {
-            if (id == node2.id) {
-                node1.edges[idx] = null;
-                break;
-            }
-        }
-    }
-    for (node2.edges, 0..) |edge_id, idx| {
-        if (edge_id) |id| {
-            if (id == node1.id) {
-                node2.edges[idx] = null;
-                break;
-            }
-        }
-    }
-}
-
-fn removeAllEdgesToNode(node_id: usize, nodes: []Map.Node) void {
-    // FIXME: should also update map.edges
-    for (nodes) |*node| {
-        if (!node.active) continue;
-        if (node.id == node_id) continue;
-        for (node.edges, 0..) |edge_id, idx| {
-            if (edge_id == node_id) {
-                node.edges[idx] = null;
-            }
-        }
-    }
-}
-
 fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
     switch (self.state) {
         .idle => {},
@@ -328,7 +246,7 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 .node => {
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                         self.hovered.node.active = false;
-                        removeAllEdgesToNode(self.hovered.node.id, map.nodes.items);
+                        map.removeAllEdgesToNode(self.hovered.node.id);
                         self.start_pos = null;
                         self.end_pos = null;
                         self.active_group = .all;
@@ -338,7 +256,8 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                     const node1 = &map.nodes.items[self.hovered.edge.from];
                     const node2 = &map.nodes.items[self.hovered.edge.to];
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                        removeEdge(node1, node2);
+                        map.removeEdge(node1, node2);
+                        self.hovered = .none;
                         self.start_pos = null;
                         self.end_pos = null;
                         self.active_group = .all;
@@ -367,15 +286,15 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, self.mouse_pos)) {
                     var new_node = if (self.hovered == .node) self.hovered.node else null;
                     if (new_node == null) {
-                        new_node = try createNode(map, self.mouse_pos);
+                        new_node = try map.createNode(self.mouse_pos);
                         if (self.hovered == .edge) {
                             const node1 = &map.nodes.items[self.hovered.edge.from];
                             const node2 = &map.nodes.items[self.hovered.edge.to];
-                            splitEdge(node1, node2, new_node.?);
+                            try map.splitEdge(node1, node2, new_node.?);
                         }
                     }
-                    active_node = &map.nodes.items[node_id]; // re-lookup active node after append to nodes ArrayList
-                    connectNodes(active_node, new_node.?);
+                    active_node = &map.nodes.items[node_id];
+                    try map.connectNodes(active_node, new_node.?);
                     self.active_node_id = new_node.?.id;
                 }
             } else if (self.hovered == .node) { // add to existing node
@@ -384,11 +303,11 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 }
             } else {
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                    const new_node = try createNode(map, self.mouse_pos);
+                    const new_node = try map.createNode(self.mouse_pos);
                     if (self.hovered == .edge) {
                         const node1 = &map.nodes.items[self.hovered.edge.from];
                         const node2 = &map.nodes.items[self.hovered.edge.to];
-                        splitEdge(node1, node2, new_node);
+                        try map.splitEdge(node1, node2, new_node);
                     }
                     self.active_node_id = new_node.id;
                 }

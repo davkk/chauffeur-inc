@@ -31,26 +31,6 @@ pub fn deinit(self: *Self) void {
     self.player.deinit();
 }
 
-fn clampToScreen(pos: rl.Vector2, padding: f32) rl.Vector2 {
-    const w: f32 = @floatFromInt(rl.GetScreenWidth());
-    const h: f32 = @floatFromInt(rl.GetScreenHeight());
-    return .{
-        .x = math.clamp(pos.x, 2 * padding, w - 2 * padding),
-        .y = math.clamp(pos.y, 2 * padding, h - 2 * padding),
-    };
-}
-
-fn isOnScreen(screen_pos: rl.Vector2) bool {
-    const w: f32 = @floatFromInt(rl.GetScreenWidth());
-    const h: f32 = @floatFromInt(rl.GetScreenHeight());
-    return screen_pos.x >= 0 and screen_pos.x <= w and
-        screen_pos.y >= 0 and screen_pos.y <= h;
-}
-
-pub fn spawnPassenger(self: *Self, map: *const Map) void {
-    self.passenger = Passenger.init(map);
-}
-
 pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
     const time = rl.GetFrameTime();
 
@@ -140,4 +120,24 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
     rl.DrawText(rl.TextFormat("mouse: %.f, %.f", mouse_pos.x, mouse_pos.y), 10, 60, 20, rl.WHITE);
 
     rl.DrawText(rl.TextFormat("pickups: %d", self.pickups), 10, 85, 20, rl.WHITE);
+}
+
+fn clampToScreen(pos: rl.Vector2, padding: f32) rl.Vector2 {
+    const w: f32 = @floatFromInt(rl.GetScreenWidth());
+    const h: f32 = @floatFromInt(rl.GetScreenHeight());
+    return .{
+        .x = math.clamp(pos.x, 2 * padding, w - 2 * padding),
+        .y = math.clamp(pos.y, 2 * padding, h - 2 * padding),
+    };
+}
+
+fn isOnScreen(screen_pos: rl.Vector2) bool {
+    const w: f32 = @floatFromInt(rl.GetScreenWidth());
+    const h: f32 = @floatFromInt(rl.GetScreenHeight());
+    return screen_pos.x >= 0 and screen_pos.x <= w and
+        screen_pos.y >= 0 and screen_pos.y <= h;
+}
+
+pub fn spawnPassenger(self: *Self, map: *const Map) void {
+    self.passenger = Passenger.init(map);
 }

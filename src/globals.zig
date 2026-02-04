@@ -9,7 +9,7 @@ pub const TILE_SIZE = 32;
 pub const TARGET_FPS = 60;
 
 pub const FRICTION = 200;
-pub const MAX_SPEED = 300;
+pub const MAX_SPEED = 400;
 
 pub const NEXT_DIR_TIMEOUT = 0.4;
 pub const NODE_ARRIVAL_DIST = 2.0;

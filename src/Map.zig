@@ -259,6 +259,127 @@ pub fn drawDebug(self: *Self) void {
     }
 }
 
+fn getDirection(dx: f32, dy: f32) ?g.Direction {
+    if (dy < 0) return .up;
+    if (dx > 0) return .right;
+    if (dy > 0) return .down;
+    if (dx < 0) return .left;
+    return null;
+}
+
+pub fn createNode(self: *Self, pos: rl.Vector2) !*Node {
+    const node = Node.init(pos, self.nodes.items.len);
+    try self.nodes.append(node);
+    return &self.nodes.items[self.nodes.items.len - 1];
+}
+
+pub fn connectNodes(self: *Self, node1: *Node, node2: *Node) !void {
+    const dx = node2.pos.x - node1.pos.x;
+    const dy = node2.pos.y - node1.pos.y;
+    const dir = getDirection(dx, dy) orelse return;
+
+    const dir_idx: usize = @intFromEnum(dir);
+    const opposite_idx: usize = (dir_idx + 2) % 4;
+
+    if (node1.edges[dir_idx] != null or node2.edges[opposite_idx] != null) {
+        return;
+    }
+
+    node1.edges[dir_idx] = node2.id;
+    node2.edges[opposite_idx] = node1.id;
+
+    const from_id = if (node1.id < node2.id) node1.id else node2.id;
+    const to_id = if (node1.id < node2.id) node2.id else node1.id;
+    try self.edges.append(.{ .from = from_id, .to = to_id });
+}
+
+pub fn splitEdge(self: *Self, node1: *Node, node2: *Node, new_node: *Node) !void {
+    const dx = node2.pos.x - node1.pos.x;
+    const dy = node2.pos.y - node1.pos.y;
+    const dir = getDirection(dx, dy) orelse return;
+
+    const dir_idx: usize = @intFromEnum(dir);
+    const opposite_idx: usize = (dir_idx + 2) % 4;
+
+    const old_from_id = if (node1.id < node2.id) node1.id else node2.id;
+    const old_to_id = if (node1.id < node2.id) node2.id else node1.id;
+
+    var i: usize = 0;
+    while (i < self.edges.items.len) {
+        const edge = &self.edges.items[i];
+        if (edge.from == old_from_id and edge.to == old_to_id) {
+            _ = self.edges.orderedRemove(i);
+        } else {
+            i += 1;
+        }
+    }
+
+    node1.edges[dir_idx] = null;
+    node2.edges[opposite_idx] = null;
+
+    node1.edges[dir_idx] = new_node.id;
+    node2.edges[opposite_idx] = new_node.id;
+    new_node.edges[opposite_idx] = node1.id;
+    new_node.edges[dir_idx] = node2.id;
+
+    try self.edges.append(.{ .from = node1.id, .to = new_node.id });
+    try self.edges.append(.{ .from = node2.id, .to = new_node.id });
+}
+
+pub fn removeEdge(self: *Self, node1: *Node, node2: *Node) void {
+    for (node1.edges, 0..) |edge_id, idx| {
+        if (edge_id) |id| {
+            if (id == node2.id) {
+                node1.edges[idx] = null;
+                break;
+            }
+        }
+    }
+    for (node2.edges, 0..) |edge_id, idx| {
+        if (edge_id) |id| {
+            if (id == node1.id) {
+                node2.edges[idx] = null;
+                break;
+            }
+        }
+    }
+
+    const from_id = if (node1.id < node2.id) node1.id else node2.id;
+    const to_id = if (node1.id < node2.id) node2.id else node1.id;
+
+    var i: usize = 0;
+    while (i < self.edges.items.len) {
+        const edge = &self.edges.items[i];
+        if (edge.from == from_id and edge.to == to_id) {
+            _ = self.edges.orderedRemove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+pub fn removeAllEdgesToNode(self: *Self, node_id: usize) void {
+    for (self.nodes.items) |*node| {
+        if (!node.active) continue;
+        if (node.id == node_id) continue;
+        for (node.edges, 0..) |edge_id, idx| {
+            if (edge_id == node_id) {
+                node.edges[idx] = null;
+            }
+        }
+    }
+
+    var i: usize = 0;
+    while (i < self.edges.items.len) {
+        const edge = &self.edges.items[i];
+        if (edge.from == node_id or edge.to == node_id) {
+            _ = self.edges.orderedRemove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
 fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge, tiles: TileMap, sprites: []Sprite } {
     var nodes = std.array_list.Managed(Node).init(alloc);
     var edges = std.array_list.Managed(Edge).init(alloc);

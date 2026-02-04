@@ -9,6 +9,13 @@ const Map = @import("Map.zig");
 
 const Self = @This();
 
+const BASE_VEC: [4]rl.Vector2 = .{
+    .{ .x = 0, .y = -1 },
+    .{ .x = 1, .y = 0 },
+    .{ .x = 0, .y = 1 },
+    .{ .x = -1, .y = 0 },
+};
+
 texture: rl.Texture2D,
 
 is_player: bool,
@@ -55,9 +62,9 @@ pub fn init(is_player: bool, x: f32, y: f32) Self {
         .curr_node = null,
         .next_node = null,
 
-        .accel = 60,
+        .accel = 80,
         .frict = 100,
-        .brake = 250,
+        .brake = 300,
 
         .speed = 0,
         .vel = rl.Vector2Zero(),
@@ -72,18 +79,6 @@ pub fn init(is_player: bool, x: f32, y: f32) Self {
 pub fn deinit(self: *Self) void {
     rl.UnloadTexture(self.texture);
 }
-
-fn oppositeDirection(dir: g.Direction) g.Direction {
-    const dir_idx: usize = @intFromEnum(dir);
-    return @enumFromInt((dir_idx + 2) % 4);
-}
-
-const BASE_VEC: [4]rl.Vector2 = .{
-    .{ .x = 0, .y = -1 },
-    .{ .x = 1, .y = 0 },
-    .{ .x = 0, .y = 1 },
-    .{ .x = -1, .y = 0 },
-};
 
 pub fn update(self: *Self, dt: f32, map: *const Map) void {
     if (self.is_player) {
@@ -169,15 +164,6 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
     self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, dt));
 }
 
-pub fn rect(self: *const Self) rl.Rectangle {
-    return .{
-        .x = self.pos.x - self.size.x / 2,
-        .y = self.pos.y - self.size.y / 2,
-        .width = self.size.x,
-        .height = self.size.y,
-    };
-}
-
 pub fn draw(self: *const Self) void {
     const angle: f32 = switch (self.curr_dir) {
         .up => 0,
@@ -193,4 +179,18 @@ pub fn draw(self: *const Self) void {
         angle,
         rl.WHITE,
     );
+}
+
+fn oppositeDirection(dir: g.Direction) g.Direction {
+    const dir_idx: usize = @intFromEnum(dir);
+    return @enumFromInt((dir_idx + 2) % 4);
+}
+
+pub fn rect(self: *const Self) rl.Rectangle {
+    return .{
+        .x = self.pos.x - self.size.x / 2,
+        .y = self.pos.y - self.size.y / 2,
+        .width = self.size.x,
+        .height = self.size.y,
+    };
 }
