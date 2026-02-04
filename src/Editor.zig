@@ -27,8 +27,9 @@ const GROUPS = [_]TextureGroup{
 pub const State = enum {
     idle,
     eraser,
-    add_node,
-    fill,
+    roads,
+    tiles,
+    sprites,
 };
 
 const Hovered = union(enum) {
@@ -36,6 +37,7 @@ const Hovered = union(enum) {
     node: *Map.Node,
     edge: *Map.Edge,
     tile: usize,
+    sprite: *Map.Sprite,
 };
 
 const Self = @This();
@@ -91,13 +93,13 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     } else if (KEY_CTRL and rl.IsKeyDown(rl.KEY_MINUS)) {
         camera.zoom = @max(camera.zoom - 1.0, 1.0);
     } else if (!KEY_SHIFT and !KEY_CTRL) {
-        if (rl.IsKeyPressed(rl.KEY_TAB) or rl.IsKeyPressed(rl.KEY_H)) {
+        if (rl.IsKeyPressed(rl.KEY_ONE)) {
             self.panel_expanded = !self.panel_expanded;
         } else if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
             self.active_node_id = null;
             self.active_group = .all;
             self.active_tile_type = null;
-        } else if (rl.IsKeyPressed(rl.KEY_V)) {
+        } else if (rl.IsKeyPressed(rl.KEY_Q)) {
             self.state = .idle;
             self.active_group = .all;
             self.start_pos = null;
@@ -107,14 +109,19 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
             self.active_group = .all;
             self.start_pos = null;
             self.end_pos = null;
-        } else if (rl.IsKeyPressed(rl.KEY_N)) {
-            self.state = .add_node;
+        } else if (rl.IsKeyPressed(rl.KEY_R)) {
+            self.state = .roads;
             self.active_group = .road;
             self.start_pos = null;
             self.end_pos = null;
-        } else if (rl.IsKeyPressed(rl.KEY_F)) {
-            self.state = .fill;
+        } else if (rl.IsKeyPressed(rl.KEY_T)) {
+            self.state = .tiles;
             self.active_group = .all;
+            self.start_pos = null;
+            self.end_pos = null;
+        } else if (rl.IsKeyPressed(rl.KEY_G)) {
+            self.state = .sprites;
+            self.active_group = .sprites;
             self.start_pos = null;
             self.end_pos = null;
         } else if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP)) {
@@ -143,11 +150,11 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     self.mouse_pos = snapToGrid(mouse_world_pos);
     self.hovered = if (!mouse_over_ui) self.detectHover(map) else .none;
 
-    if (self.active_group != .road and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+    if (self.active_group != .road and self.active_group != .sprites and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
         self.start_pos = self.mouse_pos;
         self.active_group = switch (self.hovered) {
             .edge, .node => .all,
-            .tile, .none => .tiles,
+            .tile, .none, .sprite => .tiles,
         };
     }
     if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null) {
@@ -161,7 +168,7 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void 
     rl.BeginMode2D(camera.*);
     {
         try self.drawWorld(camera, map, is_debug);
-        self.drawEditorIndicators(map);
+        self.drawEditorIndicators(camera, map);
     }
     rl.EndMode2D();
 
@@ -208,7 +215,28 @@ fn hoveredTile(self: *const Self, tiles: Map.TileMap) ?usize {
     return null;
 }
 
+fn hoveredSprite(self: *const Self, sprites: []Map.Sprite) ?*Map.Sprite {
+    for (sprites) |*sprite| {
+        const sprite_rect = g.SPRITES[sprite.sprite_id];
+        const dest_rect = rl.Rectangle{
+            .x = sprite.pos.x - sprite_rect.width / 2,
+            .y = sprite.pos.y - sprite_rect.height / 2,
+            .width = sprite_rect.width,
+            .height = sprite_rect.height,
+        };
+        if (rl.CheckCollisionPointRec(self.mouse_pos, dest_rect)) {
+            return sprite;
+        }
+    }
+    return null;
+}
+
 fn detectHover(self: *const Self, map: *const Map) Hovered {
+    if (self.active_group == .all or self.active_group == .sprites) {
+        if (self.hoveredSprite(map.sprites.items)) |sprite| {
+            return .{ .sprite = sprite };
+        }
+    }
     if (self.active_group == .all or self.active_group == .road) {
         if (self.hoveredNode(map.nodes.items)) |node| {
             return .{ .node = node };
@@ -243,6 +271,17 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
         .eraser => {
             self.active_node_id = null;
             switch (self.hovered) {
+                .sprite => {
+                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                        const sprite_ptr = self.hovered.sprite;
+                        const sprite_idx = (@intFromPtr(sprite_ptr) - @intFromPtr(map.sprites.items.ptr)) / @sizeOf(Map.Sprite);
+                        _ = map.sprites.orderedRemove(sprite_idx);
+                        self.hovered = .none;
+                        self.start_pos = null;
+                        self.end_pos = null;
+                        self.active_group = .all;
+                    }
+                },
                 .node => {
                     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                         self.hovered.node.active = false;
@@ -280,7 +319,7 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 },
             }
         },
-        .add_node => {
+        .roads => {
             if (self.active_node_id) |node_id| {
                 var active_node = &map.nodes.items[node_id];
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, self.mouse_pos)) {
@@ -313,16 +352,9 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 }
             }
         },
-        .fill => {
+        .tiles => {
             if (self.active_tile_type) |active_tile_id| {
-                if (self.active_group == .sprites) {
-                    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-                        const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
-                        const sprite_id = active_tile_id - g.TILES.len;
-                        const sprite = Map.Sprite.init(mouse_world_pos, sprite_id);
-                        try map.sprites.append(sprite);
-                    }
-                } else if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
+                if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
                     var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
                     while (iterCells.next()) |*cell| {
                         const row = @divFloor(cell.y, g.TILE_SIZE);
@@ -340,6 +372,16 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 self.end_pos = null;
             }
         },
+        .sprites => {
+            if (self.active_tile_type) |active_tile_id| {
+                if (active_tile_id >= g.TILES.len and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                    const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
+                    const sprite_id = active_tile_id - g.TILES.len;
+                    const sprite = Map.Sprite.init(mouse_world_pos, sprite_id);
+                    try map.sprites.append(sprite);
+                }
+            }
+        },
     }
 }
 
@@ -352,13 +394,23 @@ fn drawCellHighlight(pos: *const rl.Vector2) void {
     );
 }
 
-fn drawEditorIndicators(self: *const Self, map: *const Map) void {
+fn drawEditorIndicators(self: *const Self, camera: *const rl.Camera2D, map: *const Map) void {
     drawCellHighlight(&self.mouse_pos);
 
     switch (self.state) {
         .idle => {},
         .eraser => {
             switch (self.hovered) {
+                .sprite => {
+                    const sprite_rect = g.SPRITES[self.hovered.sprite.sprite_id];
+                    const dest_rect = rl.Rectangle{
+                        .x = self.hovered.sprite.pos.x - sprite_rect.width / 2,
+                        .y = self.hovered.sprite.pos.y - sprite_rect.height / 2,
+                        .width = sprite_rect.width,
+                        .height = sprite_rect.height,
+                    };
+                    rl.DrawRectangleRec(dest_rect, g.SEMI_TRANSPARENT);
+                },
                 .node => {},
                 .edge => {
                     const node1 = &map.nodes.items[self.hovered.edge.from];
@@ -378,7 +430,7 @@ fn drawEditorIndicators(self: *const Self, map: *const Map) void {
                 },
             }
         },
-        .add_node => {
+        .roads => {
             if (self.active_node_id) |node_id| {
                 const active_node = map.nodes.items[node_id];
                 drawCellHighlight(&active_node.pos);
@@ -390,11 +442,52 @@ fn drawEditorIndicators(self: *const Self, map: *const Map) void {
                 }
             }
         },
-        .fill => {
+        .tiles => {
             if (self.start_pos != null and self.end_pos != null) {
                 var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
                 while (iterCells.next()) |*cell| {
                     drawCellHighlight(cell);
+                }
+            }
+            if (self.active_tile_type) |active_tile_id| {
+                if (active_tile_id < g.TILES.len) {
+                    const rect = g.TILES[active_tile_id];
+                    const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
+                    rl.DrawTexturePro(
+                        map.tileset.texture,
+                        rect,
+                        .{
+                            .x = mouse_world_pos.x,
+                            .y = mouse_world_pos.y,
+                            .width = rect.width,
+                            .height = rect.height,
+                        },
+                        .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                        0,
+                        g.SEMI_TRANSPARENT,
+                    );
+                }
+            }
+        },
+        .sprites => {
+            if (self.active_tile_type) |active_tile_id| {
+                if (active_tile_id >= g.TILES.len) {
+                    const sprite_id = active_tile_id - g.TILES.len;
+                    const rect = g.SPRITES[sprite_id];
+                    const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
+                    rl.DrawTexturePro(
+                        map.tileset.texture,
+                        rect,
+                        .{
+                            .x = mouse_world_pos.x,
+                            .y = mouse_world_pos.y,
+                            .width = rect.width,
+                            .height = rect.height,
+                        },
+                        .{ .x = rect.width / 2, .y = rect.height / 2 },
+                        0,
+                        g.SEMI_TRANSPARENT,
+                    );
                 }
             }
         },
@@ -505,6 +598,11 @@ fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
                     if (is_hovered and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                         self.active_tile_type = global_i;
                         self.active_group = group.type;
+                        if (group.type == .sprites) {
+                            self.state = .sprites;
+                        } else if (self.state == .sprites) {
+                            self.state = .tiles;
+                        }
                     }
 
                     if (self.active_tile_type == global_i) {
