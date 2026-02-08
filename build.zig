@@ -34,15 +34,15 @@ pub fn build(b: *std.Build) !void {
     game_exe.step.dependOn(&export_tileset_cmd.step);
     b.step("export:tileset", "Export tileset assets").dependOn(&game_exe.step);
 
-    const export_map_cmd = b.addSystemCommand(&[_][]const u8{
-        "tiled",
-        "--export-map",
-        "src/assets/map.tmx",
-        "src/assets/map.json",
-    });
-    export_map_cmd.setEnvironmentVariable("QT_QPA_PLATFORM", "xcb");
-    game_exe.step.dependOn(&export_map_cmd.step);
-    b.step("export:map", "Export map assets").dependOn(&game_exe.step);
+    // const export_map_cmd = b.addSystemCommand(&[_][]const u8{
+    //     "tiled",
+    //     "--export-map",
+    //     "src/assets/map.tmx",
+    //     "src/assets/map.json",
+    // });
+    // export_map_cmd.setEnvironmentVariable("QT_QPA_PLATFORM", "xcb");
+    // game_exe.step.dependOn(&export_map_cmd.step);
+    // b.step("export:map", "Export map assets").dependOn(&game_exe.step);
 
     b.installArtifact(game_exe);
 

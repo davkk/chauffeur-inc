@@ -18,17 +18,21 @@ pub const TileMap = [g.SCREEN_HEIGHT / g.TILE_SIZE][g.SCREEN_WIDTH / g.TILE_SIZE
 
 const Self = @This();
 
+pub const NodeType = enum { default, start, end };
+
 pub const Node = struct {
-    pos: rl.Vector2,
-    id: usize,
     active: bool,
+    type: NodeType,
+    id: usize,
+    pos: rl.Vector2,
     edges: [4]?usize,
 
     pub fn init(pos: rl.Vector2, id: usize) Node {
         return Node{
             .active = true,
-            .pos = pos,
+            .type = .default,
             .id = id,
+            .pos = pos,
             .edges = .{ null, null, null, null },
         };
     }
@@ -95,6 +99,9 @@ nodes: std.array_list.Managed(Node),
 edges: std.array_list.Managed(Edge),
 sprites: std.array_list.Managed(Sprite),
 
+start_nodes: std.AutoArrayHashMap(usize, void),
+end_nodes: std.AutoArrayHashMap(usize, void),
+
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
 
@@ -129,6 +136,8 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
         .edges = std.array_list.Managed(Edge).fromOwnedSlice(alloc, loaded.edges),
         .sprites = std.array_list.Managed(Sprite).fromOwnedSlice(alloc, loaded.sprites),
+        .start_nodes = loaded.start_nodes,
+        .end_nodes = loaded.end_nodes,
     };
 }
 
@@ -253,6 +262,18 @@ pub fn drawSprites(self: *Self, draw_mode: DrawMode) void {
 pub fn drawDebug(self: *Self) void {
     for (self.nodes.items) |*node| {
         if (!node.active) continue;
+
+        switch (node.type) {
+            .start, .end => {
+                rl.DrawCircleV(
+                    .{ .x = node.pos.x, .y = node.pos.y },
+                    g.TILE_SIZE / 2.0,
+                    if (node.type == .start) rl.RED else rl.BLUE,
+                );
+            },
+            else => {},
+        }
+
         var buf: [8]u8 = undefined;
         const id_str = std.fmt.bufPrintZ(&buf, "{d}", .{node.id}) catch "??";
         rl.DrawText(@ptrCast(id_str), @intFromFloat(node.pos.x), @intFromFloat(node.pos.y), 20, rl.BLACK);
@@ -380,11 +401,20 @@ pub fn removeAllEdgesToNode(self: *Self, node_id: usize) void {
     }
 }
 
-fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge, tiles: TileMap, sprites: []Sprite } {
+fn loadFromFile(alloc: std.mem.Allocator) !struct {
+    nodes: []Node,
+    edges: []Edge,
+    tiles: TileMap,
+    sprites: []Sprite,
+    start_nodes: @FieldType(Self, "start_nodes"),
+    end_nodes: @FieldType(Self, "end_nodes"),
+} {
     var nodes = std.array_list.Managed(Node).init(alloc);
     var edges = std.array_list.Managed(Edge).init(alloc);
     var tiles: TileMap = std.mem.zeroes(TileMap);
     var sprites = std.array_list.Managed(Sprite).init(alloc);
+    var start_nodes = std.AutoArrayHashMap(usize, void).init(alloc);
+    var end_nodes = std.AutoArrayHashMap(usize, void).init(alloc);
 
     const file = try std.fs.cwd().openFile(FILE_NAME, .{});
     defer file.close();
@@ -398,6 +428,34 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge
     while (try reader.interface.takeDelimiter('\n')) |line_trimmed| {
         const line = std.mem.trim(u8, line_trimmed, " \t\r\n");
         if (line.len == 0) continue;
+
+        if (std.mem.startsWith(u8, line, "start_nodes=")) {
+            const value_part = line["start_nodes=".len..];
+            if (value_part.len > 0) {
+                var iter = std.mem.splitSequence(u8, value_part, ",");
+                while (iter.next()) |node_id_str| {
+                    const trimmed = std.mem.trim(u8, node_id_str, " \t\r\n");
+                    if (trimmed.len == 0) continue;
+                    const node_id = try std.fmt.parseInt(usize, trimmed, 10);
+                    try start_nodes.put(node_id, {});
+                }
+            }
+            continue;
+        }
+
+        if (std.mem.startsWith(u8, line, "end_nodes=")) {
+            const value_part = line["end_nodes=".len..];
+            if (value_part.len > 0) {
+                var iter = std.mem.splitSequence(u8, value_part, ",");
+                while (iter.next()) |node_id_str| {
+                    const trimmed = std.mem.trim(u8, node_id_str, " \t\r\n");
+                    if (trimmed.len == 0) continue;
+                    const node_id = try std.fmt.parseInt(usize, trimmed, 10);
+                    try end_nodes.put(node_id, {});
+                }
+            }
+            continue;
+        }
 
         if (std.mem.startsWith(u8, line, "[")) {
             if (std.mem.eql(u8, line, "[tiles]")) {
@@ -454,6 +512,12 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge
                         }
                     }
                 }
+
+                if (start_nodes.contains(node.id))
+                    node.type = .start
+                else if (end_nodes.contains(node.id))
+                    node.type = .end;
+
                 try nodes.append(node);
             },
             .sprites => {
@@ -476,6 +540,8 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct { nodes: []Node, edges: []Edge
         .nodes = try nodes.toOwnedSlice(),
         .edges = try edges.toOwnedSlice(),
         .sprites = try sprites.toOwnedSlice(),
+        .start_nodes = start_nodes,
+        .end_nodes = end_nodes,
     };
 }
 
@@ -514,6 +580,21 @@ pub fn saveToFile(self: *Self) !void {
     var writer = file.writer(&buffer);
 
     try writer.interface.print("version=1\n", .{});
+
+    try writer.interface.print("start_nodes=", .{});
+    for (self.start_nodes.keys(), 0..) |node_id, idx| {
+        try writer.interface.print("{}", .{node_id});
+        if (idx < self.start_nodes.count() - 1) try writer.interface.print(",", .{});
+    }
+    try writer.interface.print("\n", .{});
+
+    try writer.interface.print("end_nodes=", .{});
+    for (self.end_nodes.keys(), 0..) |node_id, idx| {
+        try writer.interface.print("{}", .{node_id});
+        if (idx < self.end_nodes.count() - 1) try writer.interface.print(",", .{});
+    }
+    try writer.interface.print("\n", .{});
+
     try writer.interface.print("\n", .{});
 
     // tiles

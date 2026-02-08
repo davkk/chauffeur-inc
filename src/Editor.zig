@@ -340,6 +340,28 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                     self.active_node_id = self.hovered.node.id;
                 }
+                if (rl.IsKeyPressed(rl.KEY_TAB)) {
+                    const node_id = self.hovered.node.id;
+                    const curr_type = self.hovered.node.type;
+                    const next_type: Map.NodeType = switch (curr_type) {
+                        .default => .start,
+                        .start => .end,
+                        .end => .default,
+                    };
+
+                    switch (curr_type) {
+                        .start => _ = map.start_nodes.swapRemove(node_id),
+                        .end => _ = map.end_nodes.swapRemove(node_id),
+                        .default => {},
+                    }
+                    switch (next_type) {
+                        .start => try map.start_nodes.put(node_id, {}),
+                        .end => try map.end_nodes.put(node_id, {}),
+                        .default => {},
+                    }
+
+                    self.hovered.node.type = next_type;
+                }
             } else {
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                     const new_node = try map.createNode(self.mouse_pos);
