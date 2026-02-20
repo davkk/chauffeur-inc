@@ -18,8 +18,6 @@ const BASE_VEC: [4]rl.Vector2 = .{
 
 texture: rl.Texture2D,
 
-is_player: bool,
-
 pos: rl.Vector2,
 size: rl.Vector2,
 
@@ -38,7 +36,7 @@ prev_dir: ?g.Direction,
 next_dir: ?g.Direction,
 next_dir_timer: f32,
 
-pub fn init(is_player: bool, x: f32, y: f32) Self {
+pub fn init(start_node: *const Map.Node) Self {
     const width = 16;
     const height = 32;
 
@@ -46,20 +44,18 @@ pub fn init(is_player: bool, x: f32, y: f32) Self {
     const taxi_image = rl.LoadImageFromMemory(".png", image.ptr, @intCast(image.len));
 
     return .{
-        .is_player = is_player,
-
         .texture = rl.LoadTextureFromImage(taxi_image),
 
         .pos = .{
-            .x = x,
-            .y = y,
+            .x = start_node.pos.x,
+            .y = start_node.pos.y,
         },
         .size = .{
             .x = width,
             .y = height,
         },
 
-        .curr_node = null,
+        .curr_node = start_node.id,
         .next_node = null,
 
         .accel = 80,
@@ -80,21 +76,10 @@ pub fn deinit(self: *Self) void {
     rl.UnloadTexture(self.texture);
 }
 
-pub fn update(self: *Self, dt: f32, map: *const Map) void {
-    if (self.is_player) {
-        if (rl.IsKeyPressed(rl.KEY_W)) {
-            self.next_dir = .up;
-            self.next_dir_timer = 0;
-        } else if (rl.IsKeyPressed(rl.KEY_D)) {
-            self.next_dir = .right;
-            self.next_dir_timer = 0;
-        } else if (rl.IsKeyPressed(rl.KEY_S)) {
-            self.next_dir = .down;
-            self.next_dir_timer = 0;
-        } else if (rl.IsKeyPressed(rl.KEY_A)) {
-            self.next_dir = .left;
-            self.next_dir_timer = 0;
-        }
+pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
+    if (input.dir) |dir| {
+        self.next_dir = dir;
+        self.next_dir_timer = 0;
     }
 
     self.next_dir_timer += dt;
@@ -142,7 +127,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map) void {
     }
 
     self.speed = @min(self.speed + self.accel * dt, g.MAX_SPEED);
-    if (self.is_player and rl.IsKeyDown(rl.KEY_SPACE)) {
+    if (input.brake) {
         self.speed = @max(self.speed - self.brake * dt, 0);
     }
 

@@ -13,17 +13,6 @@ start_pos: rl.Vector2,
 end_pos: rl.Vector2,
 state: enum { waiting, in_car, delivered },
 
-/// start, end are inclusive
-fn randPair(start: usize, end: usize) struct { usize, usize } {
-    var a: usize = undefined;
-    var b: usize = undefined;
-    while (a == b) { // WARN: this can go forever, separate thread
-        a = rand.intRangeAtMost(usize, start, end);
-        b = rand.intRangeAtMost(usize, start, end);
-    }
-    return .{ a, b };
-}
-
 fn randEdgePos() f32 {
     return math.clamp(rand.float(f32), 0.2, 0.8);
 }
@@ -38,7 +27,7 @@ fn randSideOffset(pos1: *const rl.Vector2, pos2: *const rl.Vector2) rl.Vector2 {
 }
 
 pub fn init(map: *const Map) Self {
-    const edge_start_idx, const edge_end_idx = randPair(0, map.edges.items.len - 1);
+    const edge_start_idx, const edge_end_idx = g.randPair(0, map.edges.items.len - 1);
 
     const edge_start = map.edges.items[edge_start_idx];
     const pos_start_from = map.nodes.items[edge_start.from].pos;

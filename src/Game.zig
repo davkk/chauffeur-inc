@@ -6,6 +6,7 @@ const g = @import("globals.zig");
 
 const Map = @import("Map.zig");
 const Car = @import("Car.zig");
+const Agent = @import("Agent.zig");
 const Passenger = @import("Passenger.zig");
 
 const Self = @This();
@@ -14,16 +15,23 @@ player: Car,
 passenger: ?Passenger,
 pickups: u32,
 
-pub fn init(map: *const Map) Self {
-    const init_node = map.nodes.items[0];
+agents: []Agent,
 
-    var player = Car.init(true, init_node.pos.x, init_node.pos.y);
-    player.curr_node = init_node.id;
+pub fn init(alloc: std.mem.Allocator, map: *const Map) !Self {
+    const init_node = &map.nodes.items[0];
+
+    const player = Car.init(init_node);
+
+    var agents = std.array_list.Managed(Agent).init(alloc);
+    for (0..3) |_| {
+        try agents.append(Agent.init(map));
+    }
 
     return .{
         .player = player,
         .passenger = Passenger.init(map),
         .pickups = 0,
+        .agents = try agents.toOwnedSlice(),
     };
 }
 
@@ -34,7 +42,12 @@ pub fn deinit(self: *Self) void {
 pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
     const time = rl.GetFrameTime();
 
-    self.player.update(time, map);
+    const player_input = getPlayerInput();
+    self.player.update(time, map, player_input);
+
+    for (self.agents) |*agent| {
+        agent.update(time, map);
+    }
 
     if (self.passenger) |*passenger| {
         switch (passenger.state) {
@@ -55,7 +68,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
         }
     }
 
-    camera.zoom = 2;
+    camera.zoom = 1;
 
     const view_half_x = (g.SCREEN_WIDTH / 2) / camera.zoom;
     const view_half_y = (g.SCREEN_HEIGHT / 2) / camera.zoom;
@@ -83,6 +96,9 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
         }
 
         self.player.draw();
+        for (self.agents) |*agent| {
+            agent.car.draw();
+        }
 
         if (is_debug) {
             if (self.player.next_node) |target_index| {
@@ -140,4 +156,22 @@ fn isOnScreen(screen_pos: rl.Vector2) bool {
 
 pub fn spawnPassenger(self: *Self, map: *const Map) void {
     self.passenger = Passenger.init(map);
+}
+
+fn getPlayerInput() g.KeyInput {
+    const dir = if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP))
+        g.Direction.up
+    else if (rl.IsKeyDown(rl.KEY_S) or rl.IsKeyDown(rl.KEY_DOWN))
+        g.Direction.down
+    else if (rl.IsKeyDown(rl.KEY_A) or rl.IsKeyDown(rl.KEY_LEFT))
+        g.Direction.left
+    else if (rl.IsKeyDown(rl.KEY_D) or rl.IsKeyDown(rl.KEY_RIGHT))
+        g.Direction.right
+    else
+        null;
+
+    return .{
+        .dir = dir,
+        .brake = rl.IsKeyDown(rl.KEY_SPACE),
+    };
 }

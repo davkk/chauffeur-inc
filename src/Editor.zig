@@ -320,6 +320,9 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
             }
         },
         .roads => {
+            if (map.nodes.items.len >= g.MAX_NODES) {
+                return;
+            }
             if (self.active_node_id) |node_id| {
                 var active_node = &map.nodes.items[node_id];
                 if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) and isValidEdge(active_node.pos, self.mouse_pos)) {

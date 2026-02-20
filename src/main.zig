@@ -29,7 +29,7 @@ pub fn main() !void {
     var map = try Map.init(alloc);
     defer map.deinit();
 
-    var game = Game.init(&map);
+    var game = try Game.init(alloc, &map);
     defer game.deinit();
 
     var editor = Editor.init();
@@ -48,17 +48,19 @@ pub fn main() !void {
         }
 
         rl.BeginDrawing();
-        rl.ClearBackground(rl.BLACK);
+        {
+            rl.ClearBackground(rl.BLACK);
 
-        switch (mode) {
-            .game => {
-                game.update(&camera, &map);
-                game.draw(&camera, &map, is_debug);
-            },
-            .editor => {
-                try editor.update(&camera, &map);
-                try editor.draw(&camera, &map, is_debug);
-            },
+            switch (mode) {
+                .game => {
+                    game.update(&camera, &map);
+                    game.draw(&camera, &map, is_debug);
+                },
+                .editor => {
+                    try editor.update(&camera, &map);
+                    try editor.draw(&camera, &map, is_debug);
+                },
+            }
         }
         rl.EndDrawing();
     }

@@ -1,4 +1,7 @@
-const math = @import("std").math;
+const std = @import("std");
+const math = std.math;
+const rand = std.crypto.random;
+
 const rl = @import("raylib.zig").rl;
 
 pub const SCREEN_WIDTH = 1920;
@@ -18,6 +21,8 @@ pub const SPEED_PENALTY_UTURN = 0.3;
 
 pub const PASSENGER_PICKUP_DISTANCE = 1.5 * TILE_SIZE;
 
+pub const MAX_NODES = 100;
+
 pub const TILES = [_]rl.Rectangle{
     .{ .x = 2 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
     .{ .x = 3 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
@@ -33,3 +38,20 @@ pub const SEMI_TRANSPARENT = rl.Color{ .r = 255, .g = 255, .b = 255, .a = 128 };
 
 // TODO: I feel like this should be somewhere else
 pub const Direction = enum { up, right, down, left };
+
+pub const KeyInput = struct {
+    dir: ?Direction,
+    brake: bool,
+};
+
+/// start, end are inclusive
+pub fn randPair(start: usize, end: usize) struct { usize, usize } {
+    std.debug.assert(start < end);
+    var a: usize = undefined;
+    var b: usize = undefined;
+    while (a == b) { // WARN: this can go forever, separate thread
+        a = rand.intRangeAtMost(usize, start, end);
+        b = rand.intRangeAtMost(usize, start, end);
+    }
+    return .{ a, b };
+}
