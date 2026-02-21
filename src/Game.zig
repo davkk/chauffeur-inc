@@ -15,23 +15,29 @@ player: Car,
 passenger: ?Passenger,
 pickups: u32,
 
-agents: []Agent,
+agents: [g.TARGET_AGENT_COUNT]Agent,
+spawn_timers: [g.TARGET_AGENT_COUNT]f32,
 
-pub fn init(alloc: std.mem.Allocator, map: *const Map) !Self {
+pub fn init(map: *const Map) Self {
     const init_node = &map.nodes.items[0];
 
     const player = Car.init(init_node);
 
-    var agents = std.array_list.Managed(Agent).init(alloc);
-    for (0..3) |_| {
-        try agents.append(Agent.init(map));
+    var agents: [g.TARGET_AGENT_COUNT]Agent = undefined;
+    var spawn_timers: [g.TARGET_AGENT_COUNT]f32 = undefined;
+
+    for (0..g.TARGET_AGENT_COUNT) |idx| {
+        agents[idx] = Agent.init(map);
+        const delay: f32 = @floatFromInt(idx);
+        spawn_timers[idx] = delay * g.AGENT_SPAWN_INTERVAL;
     }
 
     return .{
         .player = player,
         .passenger = Passenger.init(map),
         .pickups = 0,
-        .agents = try agents.toOwnedSlice(),
+        .agents = agents,
+        .spawn_timers = spawn_timers,
     };
 }
 
@@ -45,7 +51,12 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
     const player_input = getPlayerInput();
     self.player.update(time, map, player_input);
 
-    for (self.agents) |*agent| {
+    for (0..g.TARGET_AGENT_COUNT) |idx| {
+        if (self.spawn_timers[idx] > 0) {
+            self.spawn_timers[idx] -= time;
+            continue;
+        }
+        var agent = &self.agents[idx];
         agent.update(time, map);
     }
 
@@ -96,8 +107,10 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
         }
 
         self.player.draw();
-        for (self.agents) |*agent| {
-            agent.car.draw();
+        for (0..g.TARGET_AGENT_COUNT) |idx| {
+            if (self.spawn_timers[idx] <= 0) {
+                self.agents[idx].car.draw();
+            }
         }
 
         if (is_debug) {

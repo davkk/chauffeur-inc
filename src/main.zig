@@ -29,7 +29,7 @@ pub fn main() !void {
     var map = try Map.init(alloc);
     defer map.deinit();
 
-    var game = try Game.init(alloc, &map);
+    var game = Game.init(&map);
     defer game.deinit();
 
     var editor = Editor.init();

@@ -19,6 +19,9 @@ pub const NODE_ARRIVAL_DIST = 2.0;
 pub const SPEED_PENALTY_TURN = 0.6;
 pub const SPEED_PENALTY_UTURN = 0.3;
 
+pub const TARGET_AGENT_COUNT = 10;
+pub const AGENT_SPAWN_INTERVAL = 1.0;
+
 pub const PASSENGER_PICKUP_DISTANCE = 1.5 * TILE_SIZE;
 
 pub const MAX_NODES = 100;
