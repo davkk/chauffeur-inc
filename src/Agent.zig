@@ -122,16 +122,16 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
 }
 
 fn decideInput(self: *Self, map: *const Map) g.KeyInput {
-    if (self.car.curr_node != null and self.car.next_node == null) {
-        if (self.path_idx < self.path_len) {
-            const target = self.path[self.path_idx] orelse return .{ .dir = null, .brake = false };
-            const curr_idx = self.car.curr_node.?;
-            const curr_node = map.nodes.items[curr_idx];
-            for (curr_node.edges, 0..) |edge, dir_idx| {
-                if (edge == target) {
-                    self.path_idx += 1;
-                    return .{ .dir = @enumFromInt(dir_idx), .brake = false };
-                }
+    if (self.car.curr_node != null and self.car.next_node == null and self.path_idx < self.path_len) {
+        const target = self.path[self.path_idx] orelse return .{ .dir = null, .brake = false };
+
+        const curr_idx = self.car.curr_node.?;
+        const curr_node = map.nodes.items[curr_idx];
+
+        for (curr_node.edges, 0..) |edge, dir_idx| {
+            if (edge == target) {
+                self.path_idx += 1;
+                return .{ .dir = @enumFromInt(dir_idx), .brake = false };
             }
         }
     }

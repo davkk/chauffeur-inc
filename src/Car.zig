@@ -28,7 +28,6 @@ speed: f32,
 vel: rl.Vector2,
 
 accel: f32,
-frict: f32,
 brake: f32,
 
 curr_dir: g.Direction,
@@ -58,9 +57,8 @@ pub fn init(start_node: *const Map.Node) Self {
         .curr_node = start_node.id,
         .next_node = null,
 
-        .accel = 80,
-        .frict = 100,
-        .brake = 300,
+        .accel = 100,
+        .brake = 600,
 
         .speed = 0,
         .vel = rl.Vector2Zero(),
@@ -135,6 +133,7 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
         if (self.curr_dir != prev_dir) {
             const curr_dir_idx: i32 = @intFromEnum(self.curr_dir);
             const prev_dir_idx: i32 = @intFromEnum(prev_dir);
+
             const dir_diff = @mod(curr_dir_idx - prev_dir_idx, 4);
             if (dir_diff == 1 or dir_diff == 3) {
                 self.speed *= g.SPEED_PENALTY_TURN;
@@ -169,13 +168,4 @@ pub fn draw(self: *const Self) void {
 fn oppositeDirection(dir: g.Direction) g.Direction {
     const dir_idx: usize = @intFromEnum(dir);
     return @enumFromInt((dir_idx + 2) % 4);
-}
-
-pub fn rect(self: *const Self) rl.Rectangle {
-    return .{
-        .x = self.pos.x - self.size.x / 2,
-        .y = self.pos.y - self.size.y / 2,
-        .width = self.size.x,
-        .height = self.size.y,
-    };
 }

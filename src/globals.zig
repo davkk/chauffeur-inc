@@ -11,15 +11,14 @@ pub const TILE_SIZE = 32;
 
 pub const TARGET_FPS = 60;
 
-pub const FRICTION = 200;
-pub const MAX_SPEED = 400;
+pub const MAX_SPEED = 200;
 
 pub const NEXT_DIR_TIMEOUT = 0.4;
 pub const NODE_ARRIVAL_DIST = 2.0;
 pub const SPEED_PENALTY_TURN = 0.6;
 pub const SPEED_PENALTY_UTURN = 0.3;
 
-pub const TARGET_AGENT_COUNT = 10;
+pub const TARGET_AGENT_COUNT = 5;
 pub const AGENT_SPAWN_INTERVAL = 1.0;
 
 pub const PASSENGER_PICKUP_DISTANCE = 1.5 * TILE_SIZE;

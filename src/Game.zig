@@ -79,7 +79,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
         }
     }
 
-    camera.zoom = 1;
+    camera.zoom = 1.5;
 
     const view_half_x = (g.SCREEN_WIDTH / 2) / camera.zoom;
     const view_half_y = (g.SCREEN_HEIGHT / 2) / camera.zoom;

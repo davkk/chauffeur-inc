@@ -23,7 +23,7 @@ pub fn main() !void {
     var camera = rl.Camera2D{
         .target = .{ .x = g.SCREEN_WIDTH / 4 - g.TILE_SIZE / 2, .y = g.SCREEN_HEIGHT / 4 - g.TILE_SIZE / 2 },
         .offset = .{ .x = g.SCREEN_WIDTH / 2 + g.TILE_SIZE, .y = g.SCREEN_HEIGHT / 2 + g.TILE_SIZE },
-        .zoom = 2,
+        .zoom = 1.5,
     };
 
     var map = try Map.init(alloc);
