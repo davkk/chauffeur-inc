@@ -560,6 +560,7 @@ fn normalizeIds(self: *Self, nodes: []Node) ![]Node {
     for (nodes) |*node| {
         if (!node.active) continue;
         var new_node = Node.init(node.pos, id_map.get(node.id).?);
+        new_node.type = node.type;
         for (node.edges, 0..) |edge_id, idx| {
             if (edge_id == null) continue;
             if (id_map.get(edge_id.?)) |new_edge_id| {
@@ -578,6 +579,19 @@ pub fn saveToFile(self: *Self) !void {
 
     var buffer: [1024]u8 = undefined;
     var writer = file.writer(&buffer);
+
+    const normalized_nodes = try self.normalizeIds(self.nodes.items);
+    defer self.alloc.free(normalized_nodes);
+
+    self.start_nodes.clearRetainingCapacity();
+    self.end_nodes.clearRetainingCapacity();
+    for (normalized_nodes) |node| {
+        switch (node.type) {
+            .start => try self.start_nodes.put(node.id, {}),
+            .end => try self.end_nodes.put(node.id, {}),
+            else => {},
+        }
+    }
 
     try writer.interface.print("version=1\n", .{});
 
@@ -610,8 +624,6 @@ pub fn saveToFile(self: *Self) !void {
 
     // roads
     try writer.interface.print("[roads]\n", .{});
-    const normalized_nodes = try self.normalizeIds(self.nodes.items);
-    defer self.alloc.free(normalized_nodes);
 
     for (normalized_nodes) |node| {
         if (!node.active) continue;
