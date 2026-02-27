@@ -42,6 +42,13 @@ pub fn init(start_node: *const Map.Node) Self {
     const image = @embedFile("assets/taxi-car.png");
     const taxi_image = rl.LoadImageFromMemory(".png", image.ptr, @intCast(image.len));
 
+    var curr_dir: g.Direction = undefined;
+    for (start_node.edges, 0..) |edge, idx| {
+        if (edge != null) {
+            curr_dir = @enumFromInt(idx);
+        }
+    }
+
     return .{
         .texture = rl.LoadTextureFromImage(taxi_image),
 
@@ -63,7 +70,7 @@ pub fn init(start_node: *const Map.Node) Self {
         .speed = 0,
         .vel = rl.Vector2Zero(),
 
-        .curr_dir = .right,
+        .curr_dir = curr_dir,
         .prev_dir = null,
         .next_dir = null,
         .next_dir_timer = 0,
