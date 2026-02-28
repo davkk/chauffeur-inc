@@ -25,6 +25,13 @@ pub const PASSENGER_PICKUP_DISTANCE = 1.5 * TILE_SIZE;
 
 pub const MAX_NODES = 100;
 
+pub const BASE_VEC: [4]rl.Vector2 = .{
+    .{ .x = 0, .y = -1 },
+    .{ .x = 1, .y = 0 },
+    .{ .x = 0, .y = 1 },
+    .{ .x = -1, .y = 0 },
+};
+
 pub const TILES = [_]rl.Rectangle{
     .{ .x = 2 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
     .{ .x = 3 * TILE_SIZE, .y = 0, .width = TILE_SIZE, .height = TILE_SIZE },
@@ -45,15 +52,3 @@ pub const KeyInput = struct {
     dir: ?Direction,
     brake: bool,
 };
-
-/// start, end are inclusive
-pub fn randPair(start: usize, end: usize) struct { usize, usize } {
-    std.debug.assert(start < end);
-    var a: usize = undefined;
-    var b: usize = undefined;
-    while (a == b) { // WARN: this can go forever, separate thread
-        a = rand.intRangeAtMost(usize, start, end);
-        b = rand.intRangeAtMost(usize, start, end);
-    }
-    return .{ a, b };
-}

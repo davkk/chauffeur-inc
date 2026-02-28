@@ -37,8 +37,8 @@ pub fn init(map: *const Map) Self {
     };
 }
 
-pub fn update(self: *Self, dt: f32, map: *const Map) void {
-    const input = self.decideInput(map);
+pub fn update(self: *Self, dt: f32, map: *const Map, agents: []const Self, player: *const Car) void {
+    const input = self.decideInput(map, agents, player);
     self.car.update(dt, map, input);
 
     if (self.isAtEnd()) {
@@ -98,6 +98,7 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
     var segment_path: [g.MAX_NODES]?usize = .{null} ** g.MAX_NODES;
 
     for (0..waypoint_count) |_| {
+        // TODO: we should not pick other start/end nodes as waypoints
         const waypoint = rand.intRangeLessThan(usize, 0, map.nodes.items.len);
         const seg_len = findShortestPath(&segment_path, map, current, waypoint);
 
@@ -121,9 +122,11 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
     return total_len;
 }
 
-fn decideInput(self: *Self, map: *const Map) g.KeyInput {
+fn decideInput(self: *Self, map: *const Map, agents: []const Self, player: *const Car) g.KeyInput {
+    const should_brake = self.checkCollisionAhead(agents, player);
+
     if (self.car.curr_node != null and self.car.next_node == null and self.path_idx < self.path_len) {
-        const target = self.path[self.path_idx] orelse return .{ .dir = null, .brake = false };
+        const target = self.path[self.path_idx] orelse return .{ .dir = null, .brake = should_brake };
 
         const curr_idx = self.car.curr_node.?;
         const curr_node = map.nodes.items[curr_idx];
@@ -131,11 +134,51 @@ fn decideInput(self: *Self, map: *const Map) g.KeyInput {
         for (curr_node.edges, 0..) |edge, dir_idx| {
             if (edge == target) {
                 self.path_idx += 1;
-                return .{ .dir = @enumFromInt(dir_idx), .brake = false };
+                return .{ .dir = @enumFromInt(dir_idx), .brake = should_brake };
             }
         }
     }
-    return .{ .dir = null, .brake = false };
+    return .{ .dir = null, .brake = should_brake };
+}
+
+fn checkCollisionAhead(self: *const Self, agents: []const Self, player: *const Car) bool {
+    if (shouldBrakeForCar(&self.car, player)) {
+        return true;
+    }
+
+    for (agents) |other| {
+        const dist_to_other = rl.Vector2Distance(self.car.pos, other.car.pos);
+        if (dist_to_other < 5.0) continue;
+
+        if (shouldBrakeForCar(&self.car, &other.car)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn shouldBrakeForCar(self_car: *const Car, other_car: *const Car) bool {
+    if (self_car.next_node == null) return false;
+
+    // only brake for cars going the same direction
+    if (other_car.next_node != null) {
+        const same_dir = self_car.curr_dir == other_car.curr_dir;
+        if (!same_dir) return false;
+    }
+
+    const dist = rl.Vector2Distance(self_car.pos, other_car.pos);
+
+    if (dist < self_car.size.y * 3) {
+        const self_dir_vec = rl.Vector2Scale(g.BASE_VEC[@intFromEnum(self_car.curr_dir)], 1.0);
+        const to_other = rl.Vector2Subtract(other_car.pos, self_car.pos);
+        const dot_product = self_dir_vec.x * to_other.x + self_dir_vec.y * to_other.y;
+        if (dot_product > 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 pub fn isAtEnd(self: *const Self) bool {

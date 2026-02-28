@@ -9,13 +9,6 @@ const Map = @import("Map.zig");
 
 const Self = @This();
 
-const BASE_VEC: [4]rl.Vector2 = .{
-    .{ .x = 0, .y = -1 },
-    .{ .x = 1, .y = 0 },
-    .{ .x = 0, .y = 1 },
-    .{ .x = -1, .y = 0 },
-};
-
 texture: rl.Texture2D,
 
 pos: rl.Vector2,
@@ -42,13 +35,6 @@ pub fn init(start_node: *const Map.Node) Self {
     const image = @embedFile("assets/taxi-car.png");
     const taxi_image = rl.LoadImageFromMemory(".png", image.ptr, @intCast(image.len));
 
-    var curr_dir: g.Direction = undefined;
-    for (start_node.edges, 0..) |edge, idx| {
-        if (edge != null) {
-            curr_dir = @enumFromInt(idx);
-        }
-    }
-
     return .{
         .texture = rl.LoadTextureFromImage(taxi_image),
 
@@ -64,13 +50,13 @@ pub fn init(start_node: *const Map.Node) Self {
         .curr_node = start_node.id,
         .next_node = null,
 
-        .accel = 100,
-        .brake = 600,
+        .accel = 200,
+        .brake = 800,
 
         .speed = 0,
         .vel = rl.Vector2Zero(),
 
-        .curr_dir = curr_dir,
+        .curr_dir = .right,
         .prev_dir = null,
         .next_dir = null,
         .next_dir_timer = 0,
@@ -109,19 +95,22 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
         }
 
         const dist = rl.Vector2Distance(self.pos, next_node.pos);
-        if (dist < 5.0) {
-            self.pos = next_node.pos;
+        const is_right_turn = self.next_dir == self.nextDir();
+
+        if (dist < 5.0 or is_right_turn and dist < self.size.y / 2) {
             self.curr_node = next_idx;
             self.next_node = null;
             return; // TODO: refactor this, confusing flow
         }
     } else if (self.curr_node) |curr_idx| {
+        const curr_node = &map.nodes.items[curr_idx];
+        self.pos = curr_node.pos;
+
         if (self.next_dir) |next_dir| {
             self.prev_dir = self.curr_dir;
             self.curr_dir = next_dir;
         }
 
-        const curr_node = &map.nodes.items[curr_idx];
         self.next_node = curr_node.edges[@intFromEnum(self.curr_dir)];
 
         if (self.next_node == null) {
@@ -136,10 +125,16 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
         self.speed = @max(self.speed - self.brake * dt, 0);
     }
 
+    var offset_pos: ?rl.Vector2 = null;
+
     if (self.prev_dir) |prev_dir| {
         if (self.curr_dir != prev_dir) {
             const curr_dir_idx: i32 = @intFromEnum(self.curr_dir);
             const prev_dir_idx: i32 = @intFromEnum(prev_dir);
+
+            if (@mod(prev_dir_idx + 1, 4) == curr_dir_idx) {
+                offset_pos = g.BASE_VEC[@intFromEnum(self.curr_dir)];
+            }
 
             const dir_diff = @mod(curr_dir_idx - prev_dir_idx, 4);
             if (dir_diff == 1 or dir_diff == 3) {
@@ -151,28 +146,55 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
         self.prev_dir = null;
     }
 
-    self.vel = rl.Vector2Scale(BASE_VEC[@intFromEnum(self.curr_dir)], self.speed);
+    self.vel = rl.Vector2Scale(g.BASE_VEC[@intFromEnum(self.curr_dir)], self.speed);
     self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, dt));
+
+    if (offset_pos) |offset| {
+        const forward = rl.Vector2Scale(offset, self.size.y / 2);
+        self.pos = rl.Vector2Add(self.pos, forward);
+    }
 }
 
-pub fn draw(self: *const Self) void {
+pub fn draw(self: *const Self, alpha: f32) void {
     const angle: f32 = switch (self.curr_dir) {
         .up => 0,
         .right => 90,
         .down => 180,
         .left => 270,
     };
+    const next_dir = @intFromEnum(self.nextDir());
+    const offset = rl.Vector2Scale(g.BASE_VEC[next_dir], self.size.x);
+    const color = rl.ColorAlpha(rl.WHITE, alpha);
     rl.DrawTexturePro(
         self.texture,
         .{ .x = 0, .y = 0, .width = self.size.x, .height = self.size.y },
-        .{ .x = self.pos.x, .y = self.pos.y, .width = self.size.x, .height = self.size.y },
+        .{
+            .x = self.pos.x + offset.x,
+            .y = self.pos.y + offset.y,
+            .width = self.size.x,
+            .height = self.size.y,
+        },
         .{ .x = self.size.x / 2, .y = self.size.y / 2 },
         angle,
-        rl.WHITE,
+        color,
     );
 }
 
 fn oppositeDirection(dir: g.Direction) g.Direction {
     const dir_idx: usize = @intFromEnum(dir);
     return @enumFromInt((dir_idx + 2) % 4);
+}
+
+fn nextDir(self: *const Self) g.Direction {
+    const dir_idx: u8 = @intFromEnum(self.curr_dir);
+    return @enumFromInt((dir_idx + 1) % 4);
+}
+
+pub fn getCollisionRect(self: *const Self) rl.Rectangle {
+    return .{
+        .x = self.pos.x - self.size.x / 2,
+        .y = self.pos.y - self.size.y / 2,
+        .width = self.size.x,
+        .height = self.size.y,
+    };
 }

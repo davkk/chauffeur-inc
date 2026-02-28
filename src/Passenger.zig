@@ -13,6 +13,28 @@ start_pos: rl.Vector2,
 end_pos: rl.Vector2,
 state: enum { waiting, in_car, delivered },
 
+/// start, end are inclusive
+pub fn randEdgePair(map: *const Map, start: usize, end: usize) struct { usize, usize } {
+    std.debug.assert(start < end);
+    var a: usize = 0;
+    var b: usize = 0;
+    var a_in_start = true;
+    var a_in_end = true;
+    var b_in_start = true;
+    var b_in_end = true;
+    while (a == b or a_in_start or a_in_end or b_in_start or b_in_end) { // WARN: this can go forever, separate thread
+        a = rand.intRangeAtMost(usize, start, end);
+        b = rand.intRangeAtMost(usize, start, end);
+        const edge_a = map.edges.items[a];
+        const edge_b = map.edges.items[b];
+        a_in_start = map.start_nodes.contains(edge_a.from) or map.start_nodes.contains(edge_a.to);
+        a_in_end = map.end_nodes.contains(edge_a.from) or map.end_nodes.contains(edge_a.to);
+        b_in_start = map.start_nodes.contains(edge_b.from) or map.start_nodes.contains(edge_b.to);
+        b_in_end = map.end_nodes.contains(edge_b.from) or map.end_nodes.contains(edge_b.to);
+    }
+    return .{ a, b };
+}
+
 fn randEdgePos() f32 {
     return math.clamp(rand.float(f32), 0.2, 0.8);
 }
@@ -27,7 +49,7 @@ fn randSideOffset(pos1: *const rl.Vector2, pos2: *const rl.Vector2) rl.Vector2 {
 }
 
 pub fn init(map: *const Map) Self {
-    const edge_start_idx, const edge_end_idx = g.randPair(0, map.edges.items.len - 1);
+    const edge_start_idx, const edge_end_idx = randEdgePair(map, 0, map.edges.items.len - 1);
 
     const edge_start = map.edges.items[edge_start_idx];
     const pos_start_from = map.nodes.items[edge_start.from].pos;

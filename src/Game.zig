@@ -57,7 +57,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
             continue;
         }
         var agent = &self.agents[idx];
-        agent.update(time, map);
+        agent.update(time, map, &self.agents, &self.player);
     }
 
     if (self.passenger) |*passenger| {
@@ -106,10 +106,11 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
             map.drawDebug();
         }
 
-        self.player.draw();
+        self.player.draw(1.0);
+
         for (0..g.TARGET_AGENT_COUNT) |idx| {
             if (self.spawn_timers[idx] <= 0) {
-                self.agents[idx].car.draw();
+                self.agents[idx].car.draw(1.0);
             }
         }
 
