@@ -1,5 +1,5 @@
 const rl = @import("raylib.zig").rl;
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 
 const Self = @This();
 
@@ -13,8 +13,8 @@ pub fn init() Self {
     const tileset = rl.LoadTextureFromImage(tileset_image);
     return .{
         .texture = tileset,
-        .cols = @divTrunc(@as(usize, @intCast(tileset_image.width)), g.TILE_SIZE),
-        .rows = @divTrunc(@as(usize, @intCast(tileset_image.height)), g.TILE_SIZE),
+        .cols = @divTrunc(@as(usize, @intCast(tileset_image.width)), c.TILE_SIZE),
+        .rows = @divTrunc(@as(usize, @intCast(tileset_image.height)), c.TILE_SIZE),
     };
 }
 

@@ -3,14 +3,14 @@ const std = @import("std");
 const Game = @import("Game.zig");
 const Editor = @import("Editor.zig");
 const Map = @import("Map.zig");
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 const rl = @import("raylib.zig").rl;
 
 const Mode = enum { game, editor };
 
 pub fn main() !void {
-    rl.InitWindow(g.SCREEN_WIDTH, g.SCREEN_HEIGHT, "Chauffeur Inc");
-    rl.SetTargetFPS(g.TARGET_FPS);
+    rl.InitWindow(c.SCREEN_WIDTH, c.SCREEN_HEIGHT, "Chauffeur Inc");
+    rl.SetTargetFPS(c.TARGET_FPS);
     rl.SetExitKey(0);
 
     var mode = Mode.editor;
@@ -21,8 +21,8 @@ pub fn main() !void {
     const alloc = arena.allocator();
 
     var camera = rl.Camera2D{
-        .target = .{ .x = g.SCREEN_WIDTH / 4 - g.TILE_SIZE / 2, .y = g.SCREEN_HEIGHT / 4 - g.TILE_SIZE / 2 },
-        .offset = .{ .x = g.SCREEN_WIDTH / 2 + g.TILE_SIZE, .y = g.SCREEN_HEIGHT / 2 + g.TILE_SIZE },
+        .target = .{ .x = c.SCREEN_WIDTH / 4 - c.TILE_SIZE / 2, .y = c.SCREEN_HEIGHT / 4 - c.TILE_SIZE / 2 },
+        .offset = .{ .x = c.SCREEN_WIDTH / 2 + c.TILE_SIZE, .y = c.SCREEN_HEIGHT / 2 + c.TILE_SIZE },
         .zoom = 1.5,
     };
 

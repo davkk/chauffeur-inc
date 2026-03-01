@@ -4,7 +4,7 @@ const math = std.math;
 
 const rl = @import("raylib.zig").rl;
 const vec_add = @import("raylib.zig").vec_add;
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 
 const Map = @import("Map.zig");
 const Self = @This();
@@ -43,9 +43,9 @@ fn randSideOffset(pos1: *const rl.Vector2, pos2: *const rl.Vector2) rl.Vector2 {
     const dist = rl.Vector2Normalize(rl.Vector2Subtract(pos1.*, pos2.*));
     const perp: rl.Vector2 = .{ .x = dist.y, .y = -dist.x };
     return if (rand.boolean())
-        rl.Vector2Scale(perp, g.TILE_SIZE)
+        rl.Vector2Scale(perp, c.TILE_SIZE)
     else
-        rl.Vector2Scale(perp, -g.TILE_SIZE);
+        rl.Vector2Scale(perp, c.TILE_SIZE);
 }
 
 pub fn init(map: *const Map) Self {
@@ -87,7 +87,7 @@ pub fn draw(self: *Self) void {
         .waiting => rl.DrawCircleV(self.start_pos, 10, rl.BLUE),
         .in_car => rl.DrawCircleV(
             self.end_pos,
-            1.5 * g.TILE_SIZE,
+            1.5 * c.TILE_SIZE,
             rl.ColorAlpha(rl.BLUE, 0.5),
         ),
         .delivered => {},

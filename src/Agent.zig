@@ -2,16 +2,18 @@ const std = @import("std");
 const rand = std.crypto.random;
 
 const rl = @import("raylib.zig").rl;
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 
+const KeyInput = @import("Game.zig").KeyInput;
 const Car = @import("Car.zig");
 const Map = @import("Map.zig");
+const Direction = Map.Direction;
 
 const Self = @This();
 
 car: Car,
 
-path: [g.MAX_NODES]?usize,
+path: [c.MAX_NODES]?usize,
 path_len: usize,
 path_idx: usize,
 
@@ -22,7 +24,7 @@ pub fn init(map: *const Map) Self {
     const start_idx, const end_idx = pickRandomStartEnd(map);
     const start_node = &map.nodes.items[start_idx];
 
-    var path: [g.MAX_NODES]?usize = .{null} ** g.MAX_NODES;
+    var path: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
     const path_len = buildPath(&path, map, start_idx, end_idx);
 
     const car = Car.init(start_node);
@@ -47,12 +49,12 @@ pub fn update(self: *Self, dt: f32, map: *const Map, agents: []const Self, playe
 }
 
 fn findShortestPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
-    var queue: [g.MAX_NODES]?usize = .{null} ** g.MAX_NODES;
+    var queue: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
     var head: usize = 0;
     var tail: usize = 0;
 
-    var seen: [g.MAX_NODES]bool = .{false} ** g.MAX_NODES;
-    var parents: [g.MAX_NODES]?usize = .{null} ** g.MAX_NODES;
+    var seen: [c.MAX_NODES]bool = .{false} ** c.MAX_NODES;
+    var parents: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
 
     queue[tail] = start;
     tail += 1;
@@ -95,7 +97,7 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
     var total_len: usize = 0;
     var current = start;
 
-    var segment_path: [g.MAX_NODES]?usize = .{null} ** g.MAX_NODES;
+    var segment_path: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
 
     for (0..waypoint_count) |_| {
         // TODO: we should not pick other start/end nodes as waypoints
@@ -122,11 +124,11 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
     return total_len;
 }
 
-fn decideInput(self: *Self, map: *const Map, agents: []const Self, player: *const Car) g.KeyInput {
+fn decideInput(self: *Self, map: *const Map, agents: []const Self, player: *const Car) KeyInput {
     var should_brake = false;
     var should_dodge = false;
 
-    const forward = g.BASE_VEC[@intFromEnum(self.car.curr_dir)];
+    const forward = c.BASE_VEC[@intFromEnum(self.car.curr_dir)];
 
     // FIXME: allow for multiple deciders for input brake/dodge
     // agents should look at player and other agents at the same time
@@ -153,7 +155,7 @@ fn decideInput(self: *Self, map: *const Map, agents: []const Self, player: *cons
     }
 
     if (self.car.curr_node != null and self.car.next_node == null and self.path_idx < self.path_len) {
-        const target = self.path[self.path_idx] orelse return g.KeyInput.init(null, should_brake, should_dodge);
+        const target = self.path[self.path_idx] orelse return KeyInput.init(null, should_brake, should_dodge);
         const curr_idx = self.car.curr_node.?;
         const curr_node = map.nodes.items[curr_idx];
         for (curr_node.edges, 0..) |edge, dir_idx| {
@@ -164,10 +166,10 @@ fn decideInput(self: *Self, map: *const Map, agents: []const Self, player: *cons
         }
     }
 
-    return g.KeyInput.init(null, should_brake, should_dodge);
+    return KeyInput.init(null, should_brake, should_dodge);
 }
 
-fn oppositeDirection(dir: g.Direction) g.Direction {
+fn oppositeDirection(dir: Direction) Direction {
     const dir_idx: usize = @intFromEnum(dir);
     return @enumFromInt((dir_idx + 2) % 4);
 }
@@ -188,7 +190,7 @@ pub fn reset(self: *Self, map: *const Map) void {
     const start_idx, const end_idx = pickRandomStartEnd(map);
     const start_node = &map.nodes.items[start_idx];
 
-    var path: [g.MAX_NODES]?usize = .{null} ** g.MAX_NODES;
+    var path: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
     const path_len = buildPath(&path, map, start_idx, end_idx);
 
     // TODO: make tunnels - reaching end node moves to start node

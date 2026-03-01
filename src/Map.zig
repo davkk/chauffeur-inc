@@ -1,9 +1,10 @@
 const std = @import("std");
 
 const rl = @import("raylib.zig").rl;
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 
 const Tileset = @import("Tileset.zig");
+const Map = @import("Map.zig");
 
 pub const DrawMode = enum {
     all,
@@ -12,9 +13,23 @@ pub const DrawMode = enum {
     sprites,
 };
 
+pub const Direction = enum { up, right, down, left };
+
+pub const TILES = [_]rl.Rectangle{
+    .{ .x = 2 * c.TILE_SIZE, .y = 0, .width = c.TILE_SIZE, .height = c.TILE_SIZE }, // clear
+    .{ .x = 3 * c.TILE_SIZE, .y = 0, .width = c.TILE_SIZE, .height = c.TILE_SIZE },
+    .{ .x = 4 * c.TILE_SIZE, .y = 0, .width = c.TILE_SIZE, .height = c.TILE_SIZE },
+};
+
+pub const SPRITES = [_]rl.Rectangle{
+    .{ .x = 3 * c.TILE_SIZE, .y = c.TILE_SIZE, .width = 64, .height = 64 },
+};
+
+pub const TILE_DEFINITIONS = TILES ++ SPRITES;
+
 const FILE_NAME = "src/assets/map.map";
 
-pub const TileMap = [g.SCREEN_HEIGHT / g.TILE_SIZE][g.SCREEN_WIDTH / g.TILE_SIZE]usize;
+pub const TileMap = [c.SCREEN_HEIGHT / c.TILE_SIZE][c.SCREEN_WIDTH / c.TILE_SIZE]usize;
 
 const Self = @This();
 
@@ -74,15 +89,15 @@ pub const CellIterator = struct {
             .min_y = min_y,
             .max_y = max_y,
             .current_y = min_y,
-            .current_x = min_x - g.TILE_SIZE,
+            .current_x = min_x - c.TILE_SIZE,
         };
     }
 
     pub fn next(self: *@This()) ?rl.Vector2 {
-        self.current_x += g.TILE_SIZE;
+        self.current_x += c.TILE_SIZE;
         if (self.current_x > self.max_x) {
             self.current_x = self.min_x;
-            self.current_y += g.TILE_SIZE;
+            self.current_y += c.TILE_SIZE;
             if (self.current_y > self.max_y) return null;
         }
         return .{ .x = @floatFromInt(self.current_x), .y = @floatFromInt(self.current_y) };
@@ -109,10 +124,10 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     for (0..2) |idx| {
         var image = rl.LoadImageFromTexture(tileset.texture);
         rl.ImageCrop(&image, .{
-            .x = @floatFromInt(idx * g.TILE_SIZE),
+            .x = @floatFromInt(idx * c.TILE_SIZE),
             .y = 0,
-            .width = g.TILE_SIZE,
-            .height = g.TILE_SIZE,
+            .width = c.TILE_SIZE,
+            .height = c.TILE_SIZE,
         });
         road_texture[idx] = rl.LoadTextureFromImage(image);
         rl.SetTextureWrap(road_texture[idx], rl.TEXTURE_WRAP_REPEAT);
@@ -120,9 +135,9 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     var node_image = rl.LoadImageFromTexture(tileset.texture);
     rl.ImageCrop(&node_image, .{
         .x = 0,
-        .y = g.TILE_SIZE,
-        .width = 2 * g.TILE_SIZE,
-        .height = 2 * g.TILE_SIZE,
+        .y = c.TILE_SIZE,
+        .width = 2 * c.TILE_SIZE,
+        .height = 2 * c.TILE_SIZE,
     });
     road_texture[2] = rl.LoadTextureFromImage(node_image);
 
@@ -154,19 +169,19 @@ pub fn drawTiles(self: *Self, draw_mode: DrawMode) void {
         for (0..self.tiles[0].len) |tile_x| {
             const tile_id = self.tiles[tile_y][tile_x];
             if (tile_id == 0) continue;
-            const rect = g.TILE_DEFINITIONS[tile_id];
+            const rect = Map.TILE_DEFINITIONS[tile_id];
             rl.DrawTexturePro(
                 self.tileset.texture,
                 rect,
                 .{
-                    .x = @floatFromInt(tile_x * g.TILE_SIZE),
-                    .y = @floatFromInt(tile_y * g.TILE_SIZE),
+                    .x = @floatFromInt(tile_x * c.TILE_SIZE),
+                    .y = @floatFromInt(tile_y * c.TILE_SIZE),
                     .width = rect.width,
                     .height = rect.height,
                 },
-                .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                .{ .x = c.TILE_SIZE / 2, .y = c.TILE_SIZE / 2 },
                 0,
-                if (draw_mode == .all or draw_mode == .tiles) rl.WHITE else g.SEMI_TRANSPARENT,
+                if (draw_mode == .all or draw_mode == .tiles) rl.WHITE else c.SEMI_TRANSPARENT,
             );
         }
     }
@@ -178,15 +193,15 @@ pub fn drawRoads(self: *Self, draw_mode: DrawMode) void {
         if (!node1.active) continue;
         rl.DrawTexturePro(
             self.road_texture[2],
-            .{ .x = 0, .y = 0, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
-            .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * g.TILE_SIZE, .height = 2 * g.TILE_SIZE },
-            .{ .x = g.TILE_SIZE, .y = g.TILE_SIZE },
+            .{ .x = 0, .y = 0, .width = 2 * c.TILE_SIZE, .height = 2 * c.TILE_SIZE },
+            .{ .x = node1.pos.x, .y = node1.pos.y, .width = 2 * c.TILE_SIZE, .height = 2 * c.TILE_SIZE },
+            .{ .x = c.TILE_SIZE, .y = c.TILE_SIZE },
             0,
-            if (draw_mode == .all or draw_mode == .road) rl.WHITE else g.SEMI_TRANSPARENT,
+            if (draw_mode == .all or draw_mode == .road) rl.WHITE else c.SEMI_TRANSPARENT,
         );
     }
     // draw edges
-    const road_color = if (draw_mode == .all or draw_mode == .road) rl.WHITE else g.SEMI_TRANSPARENT;
+    const road_color = if (draw_mode == .all or draw_mode == .road) rl.WHITE else c.SEMI_TRANSPARENT;
     for (self.nodes.items) |*node1| {
         if (!node1.active) continue;
 
@@ -204,15 +219,15 @@ pub fn drawRoads(self: *Self, draw_mode: DrawMode) void {
             const length = (if (dx > dy) dx else dy) - 2; // to avoid overlap at junctions
 
             const angle: f32 = if (dx == 0) 0 else 90;
-            const offset_x: f32 = if (dx == 0) g.TILE_SIZE else 0;
-            const offset_y: f32 = if (dy == 0) g.TILE_SIZE else 0;
+            const offset_x: f32 = if (dx == 0) c.TILE_SIZE else 0;
+            const offset_y: f32 = if (dy == 0) c.TILE_SIZE else 0;
 
             // road left
             rl.DrawTexturePro(
                 self.road_texture[0],
-                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = length },
-                .{ .x = mid_x - offset_x, .y = mid_y - offset_y, .width = g.TILE_SIZE, .height = length },
-                .{ .x = g.TILE_SIZE / 2, .y = length / 2 },
+                .{ .x = c.TILE_SIZE, .y = 0, .width = c.TILE_SIZE, .height = length },
+                .{ .x = mid_x - offset_x, .y = mid_y - offset_y, .width = c.TILE_SIZE, .height = length },
+                .{ .x = c.TILE_SIZE / 2, .y = length / 2 },
                 angle,
                 road_color,
             );
@@ -220,9 +235,9 @@ pub fn drawRoads(self: *Self, draw_mode: DrawMode) void {
             // road line
             rl.DrawTexturePro(
                 self.road_texture[1],
-                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = length },
-                .{ .x = mid_x, .y = mid_y, .width = g.TILE_SIZE, .height = length },
-                .{ .x = g.TILE_SIZE / 2, .y = length / 2 },
+                .{ .x = c.TILE_SIZE, .y = 0, .width = c.TILE_SIZE, .height = length },
+                .{ .x = mid_x, .y = mid_y, .width = c.TILE_SIZE, .height = length },
+                .{ .x = c.TILE_SIZE / 2, .y = length / 2 },
                 angle,
                 road_color,
             );
@@ -230,9 +245,9 @@ pub fn drawRoads(self: *Self, draw_mode: DrawMode) void {
             // road right
             rl.DrawTexturePro(
                 self.road_texture[0],
-                .{ .x = g.TILE_SIZE, .y = 0, .width = g.TILE_SIZE, .height = length },
-                .{ .x = mid_x + offset_x, .y = mid_y + offset_y, .width = g.TILE_SIZE, .height = length },
-                .{ .x = g.TILE_SIZE / 2, .y = length / 2 },
+                .{ .x = c.TILE_SIZE, .y = 0, .width = c.TILE_SIZE, .height = length },
+                .{ .x = mid_x + offset_x, .y = mid_y + offset_y, .width = c.TILE_SIZE, .height = length },
+                .{ .x = c.TILE_SIZE / 2, .y = length / 2 },
                 angle + 180,
                 road_color,
             );
@@ -242,7 +257,7 @@ pub fn drawRoads(self: *Self, draw_mode: DrawMode) void {
 
 pub fn drawSprites(self: *Self, draw_mode: DrawMode) void {
     for (self.sprites.items) |sprite| {
-        const rect = g.SPRITES[sprite.sprite_id];
+        const rect = Map.SPRITES[sprite.sprite_id];
         rl.DrawTexturePro(
             self.tileset.texture,
             rect,
@@ -254,7 +269,7 @@ pub fn drawSprites(self: *Self, draw_mode: DrawMode) void {
             },
             .{ .x = rect.width / 2, .y = rect.height / 2 },
             0,
-            if (draw_mode == .all or draw_mode == .sprites) rl.WHITE else g.SEMI_TRANSPARENT,
+            if (draw_mode == .all or draw_mode == .sprites) rl.WHITE else c.SEMI_TRANSPARENT,
         );
     }
 }
@@ -267,7 +282,7 @@ pub fn drawDebug(self: *Self) void {
             .start, .end => {
                 rl.DrawCircleV(
                     .{ .x = node.pos.x, .y = node.pos.y },
-                    g.TILE_SIZE / 2.0,
+                    c.TILE_SIZE / 2.0,
                     if (node.type == .start) rl.RED else rl.BLUE,
                 );
             },
@@ -280,7 +295,7 @@ pub fn drawDebug(self: *Self) void {
     }
 }
 
-fn getDirection(dx: f32, dy: f32) ?g.Direction {
+fn getDirection(dx: f32, dy: f32) ?Direction {
     if (dy < 0) return .up;
     if (dx > 0) return .right;
     if (dy > 0) return .down;

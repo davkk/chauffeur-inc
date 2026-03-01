@@ -2,34 +2,46 @@ const std = @import("std");
 const math = std.math;
 
 const rl = @import("raylib.zig").rl;
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 
+const Game = @import("Game.zig");
 const Map = @import("Map.zig");
+const Direction = Map.Direction;
 const Car = @import("Car.zig");
 const Agent = @import("Agent.zig");
 const Passenger = @import("Passenger.zig");
 
 const Self = @This();
 
+pub const KeyInput = struct {
+    dir: ?Direction,
+    brake: bool,
+    dodge: bool,
+
+    pub fn init(dir: ?Direction, brake: bool, dodge: bool) KeyInput {
+        return .{ .dir = dir, .brake = brake, .dodge = dodge };
+    }
+};
+
 player: Car,
 passenger: ?Passenger,
 pickups: u32,
 
-agents: [g.TARGET_AGENT_COUNT]Agent,
-spawn_timers: [g.TARGET_AGENT_COUNT]f32,
+agents: [c.TARGET_AGENT_COUNT]Agent,
+spawn_timers: [c.TARGET_AGENT_COUNT]f32,
 
 pub fn init(map: *const Map) Self {
     const init_node = &map.nodes.items[0];
 
     const player = Car.init(init_node);
 
-    var agents: [g.TARGET_AGENT_COUNT]Agent = undefined;
-    var spawn_timers: [g.TARGET_AGENT_COUNT]f32 = undefined;
+    var agents: [c.TARGET_AGENT_COUNT]Agent = undefined;
+    var spawn_timers: [c.TARGET_AGENT_COUNT]f32 = undefined;
 
-    for (0..g.TARGET_AGENT_COUNT) |idx| {
+    for (0..c.TARGET_AGENT_COUNT) |idx| {
         agents[idx] = Agent.init(map);
         const delay: f32 = @floatFromInt(idx);
-        spawn_timers[idx] = delay * g.AGENT_SPAWN_INTERVAL;
+        spawn_timers[idx] = delay * c.AGENT_SPAWN_INTERVAL;
     }
 
     return .{
@@ -51,7 +63,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
     const player_input = getPlayerInput();
     self.player.update(time, map, player_input);
 
-    for (0..g.TARGET_AGENT_COUNT) |idx| {
+    for (0..c.TARGET_AGENT_COUNT) |idx| {
         if (self.spawn_timers[idx] > 0) {
             self.spawn_timers[idx] -= time;
             continue;
@@ -63,12 +75,12 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
     if (self.passenger) |*passenger| {
         switch (passenger.state) {
             .waiting => {
-                if (rl.Vector2Distance(self.player.pos, passenger.start_pos) <= g.PASSENGER_PICKUP_DISTANCE) {
+                if (rl.Vector2Distance(self.player.pos, passenger.start_pos) <= c.PASSENGER_PICKUP_DISTANCE) {
                     passenger.state = .in_car;
                 }
             },
             .in_car => {
-                if (rl.Vector2Distance(self.player.pos, passenger.end_pos) <= g.PASSENGER_PICKUP_DISTANCE and self.player.speed == 0) {
+                if (rl.Vector2Distance(self.player.pos, passenger.end_pos) <= c.PASSENGER_PICKUP_DISTANCE and self.player.speed == 0) {
                     passenger.state = .delivered;
                 }
             },
@@ -81,13 +93,13 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
 
     camera.zoom = 1.5;
 
-    const view_half_x = (g.SCREEN_WIDTH / 2) / camera.zoom;
-    const view_half_y = (g.SCREEN_HEIGHT / 2) / camera.zoom;
+    const view_half_x = (c.SCREEN_WIDTH / 2) / camera.zoom;
+    const view_half_y = (c.SCREEN_HEIGHT / 2) / camera.zoom;
     camera.target = rl.Vector2Lerp(
         camera.target,
         .{
-            .x = math.clamp(self.player.pos.x, view_half_x, g.SCREEN_WIDTH - view_half_x),
-            .y = math.clamp(self.player.pos.y, view_half_y, g.SCREEN_HEIGHT - view_half_y),
+            .x = math.clamp(self.player.pos.x, view_half_x, c.SCREEN_WIDTH - view_half_x),
+            .y = math.clamp(self.player.pos.y, view_half_y, c.SCREEN_HEIGHT - view_half_y),
         },
         0.2,
     );
@@ -109,7 +121,7 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
         const player_alpha: f32 = if (self.isOverlappingWithAny(&self.player)) 0.5 else 1.0;
         self.player.draw(player_alpha);
 
-        for (0..g.TARGET_AGENT_COUNT) |idx| {
+        for (0..c.TARGET_AGENT_COUNT) |idx| {
             if (self.spawn_timers[idx] <= 0) {
                 const alpha: f32 = if (self.isOverlappingWithAny(&self.agents[idx].car)) 0.5 else 1.0;
                 self.agents[idx].car.draw(alpha);
@@ -180,7 +192,7 @@ fn isOverlappingWithAny(self: *const Self, car: *const Car) bool {
         }
     }
 
-    for (0..g.TARGET_AGENT_COUNT) |idx| {
+    for (0..c.TARGET_AGENT_COUNT) |idx| {
         if (self.spawn_timers[idx] > 0) continue;
 
         const other = &self.agents[idx].car;
@@ -199,15 +211,15 @@ pub fn spawnPassenger(self: *Self, map: *const Map) void {
     self.passenger = Passenger.init(map);
 }
 
-fn getPlayerInput() g.KeyInput {
+fn getPlayerInput() Game.KeyInput {
     const dir = if (rl.IsKeyDown(rl.KEY_W) or rl.IsKeyDown(rl.KEY_UP))
-        g.Direction.up
+        Direction.up
     else if (rl.IsKeyDown(rl.KEY_S) or rl.IsKeyDown(rl.KEY_DOWN))
-        g.Direction.down
+        Direction.down
     else if (rl.IsKeyDown(rl.KEY_A) or rl.IsKeyDown(rl.KEY_LEFT))
-        g.Direction.left
+        Direction.left
     else if (rl.IsKeyDown(rl.KEY_D) or rl.IsKeyDown(rl.KEY_RIGHT))
-        g.Direction.right
+        Direction.right
     else
         null;
 

@@ -2,7 +2,7 @@ const std = @import("std");
 const math = std.math;
 
 const rl = @import("raylib.zig").rl;
-const g = @import("globals.zig");
+const c = @import("constants.zig");
 
 const Map = @import("Map.zig");
 
@@ -20,8 +20,8 @@ const TextureGroup = struct {
 };
 
 const GROUPS = [_]TextureGroup{
-    .{ .type = .tiles, .tiles = g.TILES[0..] },
-    .{ .type = .sprites, .tiles = g.SPRITES[0..] },
+    .{ .type = .tiles, .tiles = Map.TILES[0..] },
+    .{ .type = .sprites, .tiles = Map.SPRITES[0..] },
 };
 
 pub const State = enum {
@@ -142,7 +142,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     const mouse_screen_pos = rl.GetMousePosition();
 
     const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
-    const sidebar_rect = rl.Rectangle{ .x = g.SCREEN_WIDTH - sidebar_width, .y = 0, .width = sidebar_width, .height = g.SCREEN_HEIGHT };
+    const sidebar_rect = rl.Rectangle{ .x = c.SCREEN_WIDTH - sidebar_width, .y = 0, .width = sidebar_width, .height = c.SCREEN_HEIGHT };
 
     const mouse_world_pos = rl.GetScreenToWorld2D(mouse_screen_pos, camera.*);
     const mouse_over_ui = rl.CheckCollisionPointRec(mouse_screen_pos, sidebar_rect);
@@ -204,8 +204,8 @@ fn hoveredEdge(self: *const Self, nodes: []Map.Node, edges: []Map.Edge) ?*Map.Ed
 fn hoveredTile(self: *const Self, tiles: Map.TileMap) ?usize {
     const mx: i32 = @intFromFloat(self.mouse_pos.x);
     const my: i32 = @intFromFloat(self.mouse_pos.y);
-    const col = @divFloor(mx, g.TILE_SIZE);
-    const row = @divFloor(my, g.TILE_SIZE);
+    const col = @divFloor(mx, c.TILE_SIZE);
+    const row = @divFloor(my, c.TILE_SIZE);
     if (row >= 0 and col >= 0 and row < tiles.len and col < tiles[0].len) {
         const tile_id = tiles[@intCast(row)][@intCast(col)];
         if (tile_id != 0) {
@@ -217,7 +217,7 @@ fn hoveredTile(self: *const Self, tiles: Map.TileMap) ?usize {
 
 fn hoveredSprite(self: *const Self, sprites: []Map.Sprite) ?*Map.Sprite {
     for (sprites) |*sprite| {
-        const sprite_rect = g.SPRITES[sprite.sprite_id];
+        const sprite_rect = Map.SPRITES[sprite.sprite_id];
         const dest_rect = rl.Rectangle{
             .x = sprite.pos.x - sprite_rect.width / 2,
             .y = sprite.pos.y - sprite_rect.height / 2,
@@ -254,8 +254,8 @@ fn detectHover(self: *const Self, map: *const Map) Hovered {
 }
 
 fn snapToGrid(pos: rl.Vector2) rl.Vector2 {
-    const snappedX = @round(pos.x / g.TILE_SIZE) * g.TILE_SIZE;
-    const snappedY = @round(pos.y / g.TILE_SIZE) * g.TILE_SIZE;
+    const snappedX = @round(pos.x / c.TILE_SIZE) * c.TILE_SIZE;
+    const snappedY = @round(pos.y / c.TILE_SIZE) * c.TILE_SIZE;
     return .{ .x = snappedX, .y = snappedY };
 }
 
@@ -306,8 +306,8 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                     if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
                         var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
                         while (iterCells.next()) |*cell| {
-                            const row = @divFloor(cell.y, g.TILE_SIZE);
-                            const col = @divFloor(cell.x, g.TILE_SIZE);
+                            const row = @divFloor(cell.y, c.TILE_SIZE);
+                            const col = @divFloor(cell.x, c.TILE_SIZE);
                             if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
                                 map.tiles[@intFromFloat(row)][@intFromFloat(col)] = 0;
                             }
@@ -320,7 +320,7 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
             }
         },
         .roads => {
-            if (map.nodes.items.len >= g.MAX_NODES) {
+            if (map.nodes.items.len >= c.MAX_NODES) {
                 return;
             }
             if (self.active_node_id) |node_id| {
@@ -382,8 +382,8 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                 if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT) and self.start_pos != null and self.end_pos != null) {
                     var iterCells = Map.CellIterator.init(&self.start_pos.?, &self.end_pos.?);
                     while (iterCells.next()) |*cell| {
-                        const row = @divFloor(cell.y, g.TILE_SIZE);
-                        const col = @divFloor(cell.x, g.TILE_SIZE);
+                        const row = @divFloor(cell.y, c.TILE_SIZE);
+                        const col = @divFloor(cell.x, c.TILE_SIZE);
                         if (row >= 0 and col >= 0 and row < map.tiles.len and col < map.tiles[0].len) {
                             map.tiles[@intFromFloat(row)][@intFromFloat(col)] = active_tile_id;
                         }
@@ -399,9 +399,9 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
         },
         .sprites => {
             if (self.active_tile_type) |active_tile_id| {
-                if (active_tile_id >= g.TILES.len and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+                if (active_tile_id >= Map.TILES.len and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
                     const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
-                    const sprite_id = active_tile_id - g.TILES.len;
+                    const sprite_id = active_tile_id - Map.TILES.len;
                     const sprite = Map.Sprite.init(mouse_world_pos, sprite_id);
                     try map.sprites.append(sprite);
                 }
@@ -412,10 +412,10 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
 
 fn drawCellHighlight(pos: *const rl.Vector2) void {
     rl.DrawRectanglePro(
-        .{ .x = pos.x, .y = pos.y, .width = g.TILE_SIZE, .height = g.TILE_SIZE },
-        .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+        .{ .x = pos.x, .y = pos.y, .width = c.TILE_SIZE, .height = c.TILE_SIZE },
+        .{ .x = c.TILE_SIZE / 2, .y = c.TILE_SIZE / 2 },
         0,
-        g.SEMI_TRANSPARENT,
+        c.SEMI_TRANSPARENT,
     );
 }
 
@@ -427,14 +427,14 @@ fn drawEditorIndicators(self: *const Self, camera: *const rl.Camera2D, map: *con
         .eraser => {
             switch (self.hovered) {
                 .sprite => {
-                    const sprite_rect = g.SPRITES[self.hovered.sprite.sprite_id];
+                    const sprite_rect = Map.SPRITES[self.hovered.sprite.sprite_id];
                     const dest_rect = rl.Rectangle{
                         .x = self.hovered.sprite.pos.x - sprite_rect.width / 2,
                         .y = self.hovered.sprite.pos.y - sprite_rect.height / 2,
                         .width = sprite_rect.width,
                         .height = sprite_rect.height,
                     };
-                    rl.DrawRectangleRec(dest_rect, g.SEMI_TRANSPARENT);
+                    rl.DrawRectangleRec(dest_rect, c.SEMI_TRANSPARENT);
                 },
                 .node => {},
                 .edge => {
@@ -475,8 +475,8 @@ fn drawEditorIndicators(self: *const Self, camera: *const rl.Camera2D, map: *con
                 }
             }
             if (self.active_tile_type) |active_tile_id| {
-                if (active_tile_id < g.TILES.len) {
-                    const rect = g.TILES[active_tile_id];
+                if (active_tile_id < Map.TILES.len) {
+                    const rect = Map.TILES[active_tile_id];
                     const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
                     rl.DrawTexturePro(
                         map.tileset.texture,
@@ -487,18 +487,18 @@ fn drawEditorIndicators(self: *const Self, camera: *const rl.Camera2D, map: *con
                             .width = rect.width,
                             .height = rect.height,
                         },
-                        .{ .x = g.TILE_SIZE / 2, .y = g.TILE_SIZE / 2 },
+                        .{ .x = c.TILE_SIZE / 2, .y = c.TILE_SIZE / 2 },
                         0,
-                        g.SEMI_TRANSPARENT,
+                        c.SEMI_TRANSPARENT,
                     );
                 }
             }
         },
         .sprites => {
             if (self.active_tile_type) |active_tile_id| {
-                if (active_tile_id >= g.TILES.len) {
-                    const sprite_id = active_tile_id - g.TILES.len;
-                    const rect = g.SPRITES[sprite_id];
+                if (active_tile_id >= Map.TILES.len) {
+                    const sprite_id = active_tile_id - Map.TILES.len;
+                    const rect = Map.SPRITES[sprite_id];
                     const mouse_world_pos = rl.GetScreenToWorld2D(rl.GetMousePosition(), camera.*);
                     rl.DrawTexturePro(
                         map.tileset.texture,
@@ -511,7 +511,7 @@ fn drawEditorIndicators(self: *const Self, camera: *const rl.Camera2D, map: *con
                         },
                         .{ .x = rect.width / 2, .y = rect.height / 2 },
                         0,
-                        g.SEMI_TRANSPARENT,
+                        c.SEMI_TRANSPARENT,
                     );
                 }
             }
@@ -528,32 +528,32 @@ fn drawWorld(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void
     }
 
     const world_min_x = camera.target.x - camera.offset.x / camera.zoom;
-    const world_max_x = camera.target.x + (g.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
+    const world_max_x = camera.target.x + (c.SCREEN_WIDTH - camera.offset.x) / camera.zoom;
     const world_min_y = camera.target.y - camera.offset.y / camera.zoom;
-    const world_max_y = camera.target.y + (g.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
+    const world_max_y = camera.target.y + (c.SCREEN_HEIGHT - camera.offset.y) / camera.zoom;
 
-    var grid_x = @floor(world_min_x / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
-    while (grid_x <= world_max_x) : (grid_x += g.TILE_SIZE) {
+    var grid_x = @floor(world_min_x / c.TILE_SIZE) * c.TILE_SIZE - c.TILE_SIZE / 2;
+    while (grid_x <= world_max_x) : (grid_x += c.TILE_SIZE) {
         const pos_from = rl.Vector2{ .x = grid_x, .y = world_min_y };
         const pos_to = rl.Vector2{ .x = grid_x, .y = world_max_y };
-        const thickness: f32 = if (grid_x == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
+        const thickness: f32 = if (grid_x == c.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
         rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
     }
-    var grid_y = @floor(world_min_y / g.TILE_SIZE) * g.TILE_SIZE - g.TILE_SIZE / 2;
-    while (grid_y <= world_max_y) : (grid_y += g.TILE_SIZE) {
+    var grid_y = @floor(world_min_y / c.TILE_SIZE) * c.TILE_SIZE - c.TILE_SIZE / 2;
+    while (grid_y <= world_max_y) : (grid_y += c.TILE_SIZE) {
         const pos_from = rl.Vector2{ .x = world_min_x, .y = grid_y };
         const pos_to = rl.Vector2{ .x = world_max_x, .y = grid_y };
-        const thickness: f32 = if (grid_y == -g.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
+        const thickness: f32 = if (grid_y == c.TILE_SIZE / 2) LINE_THICKNESS else 2.0;
         rl.DrawLineEx(pos_from, pos_to, thickness, GRID_COLOR);
     }
 }
 
 fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
     const sidebar_width: f32 = if (self.panel_expanded) 200 else 30;
-    const sidebar_x = g.SCREEN_WIDTH - sidebar_width;
+    const sidebar_x = c.SCREEN_WIDTH - sidebar_width;
     const sidebar_y = 0;
 
-    const sidebar_height = g.SCREEN_HEIGHT;
+    const sidebar_height = c.SCREEN_HEIGHT;
 
     if (self.panel_expanded) {
         _ = rl.GuiPanel(
@@ -597,7 +597,7 @@ fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
                 for (group.tiles, 0..) |def, tile_i| {
                     const global_i = switch (group_idx) {
                         0 => tile_i,
-                        1 => g.TILES.len + tile_i,
+                        1 => Map.TILES.len + tile_i,
                         else => 0,
                     };
 
@@ -640,7 +640,7 @@ fn drawGui(self: *Self, tileset_texture: rl.Texture2D) void {
     } else {
         const toggle_rect = rl.Rectangle{
             .x = sidebar_x + 2,
-            .y = sidebar_y + g.SCREEN_HEIGHT / 2 - 10,
+            .y = sidebar_y + c.SCREEN_HEIGHT / 2 - 10,
             .width = 26,
             .height = 20,
         };
