@@ -106,11 +106,13 @@ pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) void {
             map.drawDebug();
         }
 
-        self.player.draw(1.0);
+        const player_alpha: f32 = if (self.isOverlappingWithAny(&self.player)) 0.5 else 1.0;
+        self.player.draw(player_alpha);
 
         for (0..g.TARGET_AGENT_COUNT) |idx| {
             if (self.spawn_timers[idx] <= 0) {
-                self.agents[idx].car.draw(1.0);
+                const alpha: f32 = if (self.isOverlappingWithAny(&self.agents[idx].car)) 0.5 else 1.0;
+                self.agents[idx].car.draw(alpha);
             }
         }
 
@@ -168,6 +170,31 @@ fn isOnScreen(screen_pos: rl.Vector2) bool {
         screen_pos.y >= 0 and screen_pos.y <= h;
 }
 
+fn isOverlappingWithAny(self: *const Self, car: *const Car) bool {
+    const car_rect = car.getCollisionRect();
+
+    if (car.curr_node != self.player.curr_node or car.pos.x != self.player.pos.x or car.pos.y != self.player.pos.y) {
+        const player_rect = self.player.getCollisionRect();
+        if (rl.CheckCollisionRecs(car_rect, player_rect)) {
+            return true;
+        }
+    }
+
+    for (0..g.TARGET_AGENT_COUNT) |idx| {
+        if (self.spawn_timers[idx] > 0) continue;
+
+        const other = &self.agents[idx].car;
+        if (car.curr_node == other.curr_node and car.pos.x == other.pos.x and car.pos.y == other.pos.y) continue;
+
+        const other_rect = other.getCollisionRect();
+        if (rl.CheckCollisionRecs(car_rect, other_rect)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn spawnPassenger(self: *Self, map: *const Map) void {
     self.passenger = Passenger.init(map);
 }
@@ -187,5 +214,6 @@ fn getPlayerInput() g.KeyInput {
     return .{
         .dir = dir,
         .brake = rl.IsKeyDown(rl.KEY_SPACE),
+        .dodge = rl.IsKeyDown(rl.KEY_P),
     };
 }

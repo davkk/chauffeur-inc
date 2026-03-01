@@ -28,6 +28,10 @@ prev_dir: ?g.Direction,
 next_dir: ?g.Direction,
 next_dir_timer: f32,
 
+lane_offset: f32,
+target_lane_offset: f32,
+dodge_timer: f32,
+
 pub fn init(start_node: *const Map.Node) Self {
     const width = 16;
     const height = 32;
@@ -60,6 +64,10 @@ pub fn init(start_node: *const Map.Node) Self {
         .prev_dir = null,
         .next_dir = null,
         .next_dir_timer = 0,
+
+        .lane_offset = 0,
+        .target_lane_offset = 0,
+        .dodge_timer = 0,
     };
 }
 
@@ -76,6 +84,14 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
     self.next_dir_timer += dt;
     if (self.next_dir_timer > g.NEXT_DIR_TIMEOUT) {
         self.next_dir = null;
+    }
+
+    if (input.dodge) {
+        self.dodge_timer = g.DODGE_DURATION;
+    }
+
+    if (self.dodge_timer > 0) {
+        self.dodge_timer -= dt;
     }
 
     self.prev_dir = self.curr_dir;
@@ -98,19 +114,18 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
         const is_right_turn = self.next_dir == self.nextDir();
 
         if (dist < 5.0 or is_right_turn and dist < self.size.y / 2) {
+            self.pos = next_node.pos;
             self.curr_node = next_idx;
             self.next_node = null;
             return; // TODO: refactor this, confusing flow
         }
     } else if (self.curr_node) |curr_idx| {
-        const curr_node = &map.nodes.items[curr_idx];
-        self.pos = curr_node.pos;
-
         if (self.next_dir) |next_dir| {
             self.prev_dir = self.curr_dir;
             self.curr_dir = next_dir;
         }
 
+        const curr_node = &map.nodes.items[curr_idx];
         self.next_node = curr_node.edges[@intFromEnum(self.curr_dir)];
 
         if (self.next_node == null) {
@@ -125,16 +140,19 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
         self.speed = @max(self.speed - self.brake * dt, 0);
     }
 
-    var offset_pos: ?rl.Vector2 = null;
+    if (input.dodge) {
+        self.target_lane_offset = self.size.x;
+    } else {
+        self.target_lane_offset = 0;
+    }
+
+    const lerp_factor = @min(g.DODGE_SPEED * dt, 1.0);
+    self.lane_offset = std.math.lerp(self.lane_offset, self.target_lane_offset, lerp_factor);
 
     if (self.prev_dir) |prev_dir| {
         if (self.curr_dir != prev_dir) {
             const curr_dir_idx: i32 = @intFromEnum(self.curr_dir);
             const prev_dir_idx: i32 = @intFromEnum(prev_dir);
-
-            if (@mod(prev_dir_idx + 1, 4) == curr_dir_idx) {
-                offset_pos = g.BASE_VEC[@intFromEnum(self.curr_dir)];
-            }
 
             const dir_diff = @mod(curr_dir_idx - prev_dir_idx, 4);
             if (dir_diff == 1 or dir_diff == 3) {
@@ -148,11 +166,6 @@ pub fn update(self: *Self, dt: f32, map: *const Map, input: g.KeyInput) void {
 
     self.vel = rl.Vector2Scale(g.BASE_VEC[@intFromEnum(self.curr_dir)], self.speed);
     self.pos = rl.Vector2Add(self.pos, rl.Vector2Scale(self.vel, dt));
-
-    if (offset_pos) |offset| {
-        const forward = rl.Vector2Scale(offset, self.size.y / 2);
-        self.pos = rl.Vector2Add(self.pos, forward);
-    }
 }
 
 pub fn draw(self: *const Self, alpha: f32) void {
@@ -162,15 +175,17 @@ pub fn draw(self: *const Self, alpha: f32) void {
         .down => 180,
         .left => 270,
     };
-    const next_dir = @intFromEnum(self.nextDir());
-    const offset = rl.Vector2Scale(g.BASE_VEC[next_dir], self.size.x);
+
+    const offset_vec = g.BASE_VEC[@intFromEnum(self.nextDir())];
+    const draw_pos = rl.Vector2Add(self.pos, rl.Vector2Scale(offset_vec, self.lane_offset));
+
     const color = rl.ColorAlpha(rl.WHITE, alpha);
     rl.DrawTexturePro(
         self.texture,
         .{ .x = 0, .y = 0, .width = self.size.x, .height = self.size.y },
         .{
-            .x = self.pos.x + offset.x,
-            .y = self.pos.y + offset.y,
+            .x = draw_pos.x,
+            .y = draw_pos.y,
             .width = self.size.x,
             .height = self.size.y,
         },
@@ -191,10 +206,14 @@ fn nextDir(self: *const Self) g.Direction {
 }
 
 pub fn getCollisionRect(self: *const Self) rl.Rectangle {
-    return .{
-        .x = self.pos.x - self.size.x / 2,
-        .y = self.pos.y - self.size.y / 2,
-        .width = self.size.x,
-        .height = self.size.y,
-    };
+    const offset_vec = g.BASE_VEC[@intFromEnum(self.nextDir())];
+    const offset_pos = rl.Vector2Add(self.pos, rl.Vector2Scale(offset_vec, self.lane_offset));
+    const x = offset_pos.x - self.size.x / 2;
+    const y = offset_pos.y - self.size.y / 2;
+    const width = self.size.x;
+    const height = self.size.y;
+    return if (self.curr_dir == .up or self.curr_dir == .down)
+        .{ .x = x, .y = y, .width = width, .height = height }
+    else
+        .{ .x = x, .y = y, .width = height, .height = width };
 }

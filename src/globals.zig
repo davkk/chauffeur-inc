@@ -23,6 +23,9 @@ pub const AGENT_SPAWN_INTERVAL = 1.0;
 
 pub const PASSENGER_PICKUP_DISTANCE = 1.5 * TILE_SIZE;
 
+pub const DODGE_SPEED = 10.0;
+pub const DODGE_DURATION = 2.0;
+
 pub const MAX_NODES = 100;
 
 pub const BASE_VEC: [4]rl.Vector2 = .{
@@ -51,4 +54,9 @@ pub const Direction = enum { up, right, down, left };
 pub const KeyInput = struct {
     dir: ?Direction,
     brake: bool,
+    dodge: bool,
+
+    pub fn init(dir: ?Direction, brake: bool, dodge: bool) KeyInput {
+        return .{ .dir = dir, .brake = brake, .dodge = dodge };
+    }
 };

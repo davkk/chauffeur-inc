@@ -123,62 +123,53 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
 }
 
 fn decideInput(self: *Self, map: *const Map, agents: []const Self, player: *const Car) g.KeyInput {
-    const should_brake = self.checkCollisionAhead(agents, player);
+    var should_brake = false;
+    var should_dodge = false;
+
+    const forward = g.BASE_VEC[@intFromEnum(self.car.curr_dir)];
+
+    // FIXME: allow for multiple deciders for input brake/dodge
+    // agents should look at player and other agents at the same time
+    // so both checks (player & agents) should not interfere with each other
+    const to_player = rl.Vector2Subtract(player.pos, self.car.pos);
+    const dot_player = rl.Vector2DotProduct(forward, to_player);
+    if (dot_player > 0 and rl.Vector2Length(to_player) <= self.car.size.y * 4) {
+        const same_dir = self.car.curr_dir == player.curr_dir;
+        const opp_dir = self.car.curr_dir == oppositeDirection(player.curr_dir);
+        should_brake = same_dir;
+        should_dodge = opp_dir;
+    }
+
+    for (agents) |*other| {
+        const to_other = rl.Vector2Subtract(other.car.pos, self.car.pos);
+        const dot = rl.Vector2DotProduct(forward, to_other);
+        if (dot > 0 and rl.Vector2Length(to_other) <= self.car.size.y * 4) {
+            const same_dir = self.car.curr_dir == other.car.curr_dir;
+            const opp_dir = self.car.curr_dir == oppositeDirection(other.car.curr_dir);
+            should_brake = same_dir;
+            should_dodge = opp_dir;
+            if (should_brake or should_dodge) break;
+        }
+    }
 
     if (self.car.curr_node != null and self.car.next_node == null and self.path_idx < self.path_len) {
-        const target = self.path[self.path_idx] orelse return .{ .dir = null, .brake = should_brake };
-
+        const target = self.path[self.path_idx] orelse return g.KeyInput.init(null, should_brake, should_dodge);
         const curr_idx = self.car.curr_node.?;
         const curr_node = map.nodes.items[curr_idx];
-
         for (curr_node.edges, 0..) |edge, dir_idx| {
             if (edge == target) {
                 self.path_idx += 1;
-                return .{ .dir = @enumFromInt(dir_idx), .brake = should_brake };
+                return .{ .dir = @enumFromInt(dir_idx), .brake = should_brake, .dodge = should_dodge };
             }
         }
     }
-    return .{ .dir = null, .brake = should_brake };
+
+    return g.KeyInput.init(null, should_brake, should_dodge);
 }
 
-fn checkCollisionAhead(self: *const Self, agents: []const Self, player: *const Car) bool {
-    if (shouldBrakeForCar(&self.car, player)) {
-        return true;
-    }
-
-    for (agents) |other| {
-        const dist_to_other = rl.Vector2Distance(self.car.pos, other.car.pos);
-        if (dist_to_other < 5.0) continue;
-
-        if (shouldBrakeForCar(&self.car, &other.car)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn shouldBrakeForCar(self_car: *const Car, other_car: *const Car) bool {
-    if (self_car.next_node == null) return false;
-
-    // only brake for cars going the same direction
-    if (other_car.next_node != null) {
-        const same_dir = self_car.curr_dir == other_car.curr_dir;
-        if (!same_dir) return false;
-    }
-
-    const dist = rl.Vector2Distance(self_car.pos, other_car.pos);
-
-    if (dist < self_car.size.y * 3) {
-        const self_dir_vec = rl.Vector2Scale(g.BASE_VEC[@intFromEnum(self_car.curr_dir)], 1.0);
-        const to_other = rl.Vector2Subtract(other_car.pos, self_car.pos);
-        const dot_product = self_dir_vec.x * to_other.x + self_dir_vec.y * to_other.y;
-        if (dot_product > 0) {
-            return true;
-        }
-    }
-
-    return false;
+fn oppositeDirection(dir: g.Direction) g.Direction {
+    const dir_idx: usize = @intFromEnum(dir);
+    return @enumFromInt((dir_idx + 2) % 4);
 }
 
 pub fn isAtEnd(self: *const Self) bool {
@@ -214,4 +205,7 @@ pub fn reset(self: *Self, map: *const Map) void {
     self.car.vel = rl.Vector2Zero();
     self.car.next_dir = null;
     self.car.next_dir_timer = 0;
+    self.car.lane_offset = 0;
+    self.car.target_lane_offset = 0;
+    self.car.dodge_timer = 0;
 }
