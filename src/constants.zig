@@ -21,13 +21,18 @@ pub const SPEED_PENALTY_TURN = 0.6;
 pub const SPEED_PENALTY_UTURN = 0.3;
 pub const SPEED_PENALTY_DODGE = 0.8;
 
-pub const TARGET_AGENT_COUNT = 3;
+pub const TARGET_AGENT_COUNT = 13;
 pub const AGENT_SPAWN_INTERVAL = 1.0;
 
 pub const PASSENGER_PICKUP_DISTANCE = 1.5 * TILE_SIZE;
 
 pub const DODGE_SPEED = 10.0;
 pub const DODGE_DURATION = 0.5;
+
+pub const YIELD_DIST = 80.0;
+pub const NODE_CLEAR_DIST = 16.0;
+pub const YIELD_TIE_EPS = 5.0;
+pub const YIELD_TIMEOUT = 2.0;
 
 pub const ANGLE_CHANGE_SPEED = 25.0;
 

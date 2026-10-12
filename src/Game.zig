@@ -69,7 +69,7 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
             continue;
         }
         var agent = &self.agents[idx];
-        agent.update(time, map, &self.agents, &self.player);
+        agent.update(time, map, &self.agents, idx, &self.player);
     }
 
     if (self.passenger) |*passenger| {
