@@ -29,7 +29,7 @@ pub const TILE_DEFINITIONS = TILES ++ SPRITES;
 
 const FILE_NAME = "src/assets/map.map";
 
-pub const TileMap = [c.SCREEN_HEIGHT / c.TILE_SIZE][c.SCREEN_WIDTH / c.TILE_SIZE]usize;
+pub const TileMap = [c.WORLD_HEIGHT / c.TILE_SIZE][c.WORLD_WIDTH / c.TILE_SIZE]usize;
 
 const Self = @This();
 
@@ -114,8 +114,8 @@ nodes: std.array_list.Managed(Node),
 edges: std.array_list.Managed(Edge),
 sprites: std.array_list.Managed(Sprite),
 
-start_nodes: std.AutoArrayHashMap(usize, void),
-end_nodes: std.AutoArrayHashMap(usize, void),
+start_nodes: std.array_hash_map.Auto(usize, void),
+end_nodes: std.array_hash_map.Auto(usize, void),
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     const tileset = Tileset.init();
@@ -156,12 +156,15 @@ pub fn init(alloc: std.mem.Allocator) !Self {
     };
 }
 
-pub fn deinit(self: *const Self) void {
+pub fn deinit(self: *Self) void {
     for (self.road_texture) |road| rl.UnloadTexture(road);
     rl.UnloadTexture(self.tileset.texture);
 
     self.nodes.deinit();
+    self.edges.deinit();
     self.sprites.deinit();
+    self.start_nodes.deinit(self.alloc);
+    self.end_nodes.deinit(self.alloc);
 }
 
 pub fn drawTiles(self: *Self, draw_mode: DrawMode) void {
@@ -428,14 +431,18 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct {
     var edges = std.array_list.Managed(Edge).init(alloc);
     var tiles: TileMap = std.mem.zeroes(TileMap);
     var sprites = std.array_list.Managed(Sprite).init(alloc);
-    var start_nodes = std.AutoArrayHashMap(usize, void).init(alloc);
-    var end_nodes = std.AutoArrayHashMap(usize, void).init(alloc);
+    var start_nodes: std.array_hash_map.Auto(usize, void) = .empty;
+    var end_nodes: std.array_hash_map.Auto(usize, void) = .empty;
 
-    const file = try std.fs.cwd().openFile(FILE_NAME, .{});
-    defer file.close();
+    var io_instance: std.Io.Threaded = .init(alloc, .{});
+    defer io_instance.deinit();
+    const io = io_instance.io();
+
+    const file = try std.Io.Dir.cwd().openFile(io, FILE_NAME, .{});
+    defer file.close(io);
 
     var line_buf: [1024]u8 = undefined;
-    var reader = file.reader(&line_buf);
+    var reader = file.reader(io, &line_buf);
 
     var section: enum { header, tiles, roads, sprites } = .header;
     var section_row: usize = 0;
@@ -452,7 +459,7 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct {
                     const trimmed = std.mem.trim(u8, node_id_str, " \t\r\n");
                     if (trimmed.len == 0) continue;
                     const node_id = try std.fmt.parseInt(usize, trimmed, 10);
-                    try start_nodes.put(node_id, {});
+                    try start_nodes.put(alloc, node_id, {});
                 }
             }
             continue;
@@ -466,7 +473,7 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct {
                     const trimmed = std.mem.trim(u8, node_id_str, " \t\r\n");
                     if (trimmed.len == 0) continue;
                     const node_id = try std.fmt.parseInt(usize, trimmed, 10);
-                    try end_nodes.put(node_id, {});
+                    try end_nodes.put(alloc, node_id, {});
                 }
             }
             continue;
@@ -490,6 +497,7 @@ fn loadFromFile(alloc: std.mem.Allocator) !struct {
                 continue;
             },
             .tiles => {
+                if (section_row >= tiles.len) continue;
                 var row_iter = std.mem.splitSequence(u8, line, ",");
                 var col: usize = 0;
                 while (row_iter.next()) |tile_str| {
@@ -589,11 +597,15 @@ fn normalizeIds(self: *Self, nodes: []Node) ![]Node {
 }
 
 pub fn saveToFile(self: *Self) !void {
-    const file = try std.fs.cwd().createFile(FILE_NAME, .{});
-    defer file.close();
+    var io_instance: std.Io.Threaded = .init(self.alloc, .{});
+    defer io_instance.deinit();
+    const io = io_instance.io();
+
+    const file = try std.Io.Dir.cwd().createFile(io, FILE_NAME, .{});
+    defer file.close(io);
 
     var buffer: [1024]u8 = undefined;
-    var writer = file.writer(&buffer);
+    var writer = file.writer(io, &buffer);
 
     const normalized_nodes = try self.normalizeIds(self.nodes.items);
     defer self.alloc.free(normalized_nodes);
@@ -602,8 +614,8 @@ pub fn saveToFile(self: *Self) !void {
     self.end_nodes.clearRetainingCapacity();
     for (normalized_nodes) |node| {
         switch (node.type) {
-            .start => try self.start_nodes.put(node.id, {}),
-            .end => try self.end_nodes.put(node.id, {}),
+            .start => try self.start_nodes.put(self.alloc, node.id, {}),
+            .end => try self.end_nodes.put(self.alloc, node.id, {}),
             else => {},
         }
     }

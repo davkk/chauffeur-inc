@@ -1,11 +1,13 @@
 const std = @import("std");
 const math = std.math;
-const rand = std.crypto.random;
 
 const rl = @import("raylib.zig").rl;
 
-pub const SCREEN_WIDTH = 1920;
-pub const SCREEN_HEIGHT = 1200;
+pub const SCREEN_WIDTH = 1280;
+pub const SCREEN_HEIGHT = 800;
+
+pub const WORLD_WIDTH = 1920;
+pub const WORLD_HEIGHT = 1200;
 
 pub const TILE_SIZE = 32;
 

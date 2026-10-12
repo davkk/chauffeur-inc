@@ -1,5 +1,5 @@
 const std = @import("std");
-const rand = std.crypto.random;
+const rand = @import("raylib.zig").rand;
 const math = std.math;
 
 const rl = @import("raylib.zig").rl;
@@ -23,8 +23,8 @@ pub fn randEdgePair(map: *const Map, start: usize, end: usize) struct { usize, u
     var b_in_start = true;
     var b_in_end = true;
     while (a == b or a_in_start or a_in_end or b_in_start or b_in_end) { // WARN: this can go forever, separate thread
-        a = rand.intRangeAtMost(usize, start, end);
-        b = rand.intRangeAtMost(usize, start, end);
+        a = rand().intRangeAtMost(usize, start, end);
+        b = rand().intRangeAtMost(usize, start, end);
         const edge_a = map.edges.items[a];
         const edge_b = map.edges.items[b];
         a_in_start = map.start_nodes.contains(edge_a.from) or map.start_nodes.contains(edge_a.to);
@@ -36,13 +36,13 @@ pub fn randEdgePair(map: *const Map, start: usize, end: usize) struct { usize, u
 }
 
 fn randEdgePos() f32 {
-    return math.clamp(rand.float(f32), 0.2, 0.8);
+    return math.clamp(rand().float(f32), 0.2, 0.8);
 }
 
 fn randSideOffset(pos1: *const rl.Vector2, pos2: *const rl.Vector2) rl.Vector2 {
     const dist = rl.Vector2Normalize(rl.Vector2Subtract(pos1.*, pos2.*));
     const perp: rl.Vector2 = .{ .x = dist.y, .y = -dist.x };
-    return if (rand.boolean())
+    return if (rand().boolean())
         rl.Vector2Scale(perp, c.TILE_SIZE)
     else
         rl.Vector2Scale(perp, c.TILE_SIZE);

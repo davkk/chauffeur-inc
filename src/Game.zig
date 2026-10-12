@@ -91,15 +91,15 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *const Map) void {
         }
     }
 
-    camera.zoom = 1.5;
+    camera.zoom = 1.0;
 
     const view_half_x = (c.SCREEN_WIDTH / 2) / camera.zoom;
     const view_half_y = (c.SCREEN_HEIGHT / 2) / camera.zoom;
     camera.target = rl.Vector2Lerp(
         camera.target,
         .{
-            .x = math.clamp(self.player.pos.x, view_half_x, c.SCREEN_WIDTH - view_half_x),
-            .y = math.clamp(self.player.pos.y, view_half_y, c.SCREEN_HEIGHT - view_half_y),
+            .x = math.clamp(self.player.pos.x, view_half_x, c.WORLD_WIDTH - view_half_x),
+            .y = math.clamp(self.player.pos.y, view_half_y, c.WORLD_HEIGHT - view_half_y),
         },
         0.2,
     );

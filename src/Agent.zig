@@ -1,5 +1,5 @@
 const std = @import("std");
-const rand = std.crypto.random;
+const rand = @import("raylib.zig").rand;
 
 const rl = @import("raylib.zig").rl;
 const c = @import("constants.zig");
@@ -92,7 +92,7 @@ fn findShortestPath(path: []?usize, map: *const Map, start: usize, end: usize) u
 }
 
 fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
-    const waypoint_count = rand.intRangeAtMost(usize, 2, 4);
+    const waypoint_count = rand().intRangeAtMost(usize, 2, 4);
 
     var total_len: usize = 0;
     var current = start;
@@ -101,7 +101,7 @@ fn buildPath(path: []?usize, map: *const Map, start: usize, end: usize) usize {
 
     for (0..waypoint_count) |_| {
         // TODO: we should not pick other start/end nodes as waypoints
-        const waypoint = rand.intRangeLessThan(usize, 0, map.nodes.items.len);
+        const waypoint = rand().intRangeLessThan(usize, 0, map.nodes.items.len);
         const seg_len = findShortestPath(&segment_path, map, current, waypoint);
 
         for (0..seg_len) |i| {
@@ -179,9 +179,9 @@ pub fn isAtEnd(self: *const Self) bool {
 }
 
 fn pickRandomStartEnd(map: *const Map) struct { usize, usize } {
-    const a = rand.intRangeLessThan(usize, 0, map.start_nodes.count());
+    const a = rand().intRangeLessThan(usize, 0, map.start_nodes.count());
     const start_idx = map.start_nodes.keys()[a];
-    const b = rand.intRangeLessThan(usize, 0, map.end_nodes.count());
+    const b = rand().intRangeLessThan(usize, 0, map.end_nodes.count());
     const end_idx = map.end_nodes.keys()[b];
     return .{ start_idx, end_idx };
 }

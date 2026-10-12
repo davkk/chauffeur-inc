@@ -1,5 +1,4 @@
 const std = @import("std");
-const rl = @import("raylib");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -9,20 +8,25 @@ pub fn build(b: *std.Build) !void {
     const raylib_dep = b.dependency("raylib", .{
         .target = target,
         .optimize = optimize,
+        .raygui = true,
     });
     const raylib = raylib_dep.artifact("raylib");
-    rl.addRaygui(b, raylib, b.dependency("raygui", .{}), .{});
+    // Raylib's C code (bundled GLFW/RGFW gamepad polling) contains known
+    // out-of-bounds address computations that are benign in C but trap under
+    // Zig's C safety checks in Debug (see raysan5/raylib#3674). Disable C
+    // sanitization for the raylib module only; our Zig code keeps full checks.
+    raylib.root_module.sanitize_c = .off;
 
     const game_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    game_mod.linkLibrary(raylib);
     const game_exe = b.addExecutable(.{
         .name = "chauffeur_inc",
         .root_module = game_mod,
     });
-    game_exe.linkLibrary(raylib);
 
     const export_tileset_cmd = b.addSystemCommand(&[_][]const u8{
         "libresprite",
@@ -31,8 +35,7 @@ pub fn build(b: *std.Build) !void {
         "--save-as",
         b.path("src/assets/tileset.png").getPath(b),
     });
-    game_exe.step.dependOn(&export_tileset_cmd.step);
-    b.step("export:tileset", "Export tileset assets").dependOn(&game_exe.step);
+    b.step("export:tileset", "Export tileset assets").dependOn(&export_tileset_cmd.step);
 
     // const export_map_cmd = b.addSystemCommand(&[_][]const u8{
     //     "tiled",

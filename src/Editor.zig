@@ -358,8 +358,8 @@ fn handleState(self: *Self, map: *Map, camera: *rl.Camera2D) !void {
                         .default => {},
                     }
                     switch (next_type) {
-                        .start => try map.start_nodes.put(node_id, {}),
-                        .end => try map.end_nodes.put(node_id, {}),
+                        .start => try map.start_nodes.put(map.alloc, node_id, {}),
+                        .end => try map.end_nodes.put(map.alloc, node_id, {}),
                         .default => {},
                     }
 

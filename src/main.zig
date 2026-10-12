@@ -21,9 +21,9 @@ pub fn main() !void {
     const alloc = arena.allocator();
 
     var camera = rl.Camera2D{
-        .target = .{ .x = c.SCREEN_WIDTH / 4 - c.TILE_SIZE / 2, .y = c.SCREEN_HEIGHT / 4 - c.TILE_SIZE / 2 },
+        .target = .{ .x = c.WORLD_WIDTH / 2, .y = c.WORLD_HEIGHT / 2 },
         .offset = .{ .x = c.SCREEN_WIDTH / 2 + c.TILE_SIZE, .y = c.SCREEN_HEIGHT / 2 + c.TILE_SIZE },
-        .zoom = 1.5,
+        .zoom = 1.0,
     };
 
     var map = try Map.init(alloc);
