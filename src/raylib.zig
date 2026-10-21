@@ -41,3 +41,10 @@ pub fn rand() std.Random {
     }
     return prng.random();
 }
+
+/// Make the shared random source deterministic. Call this once before creating
+/// the game (`--seed` in the CLI, tests, replays).
+pub fn seedRandom(seed: u64) void {
+    prng.seed(seed);
+    prng_seeded = true;
+}

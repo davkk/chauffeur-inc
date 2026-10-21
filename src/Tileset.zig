@@ -18,6 +18,14 @@ pub fn init() Self {
     };
 }
 
+pub fn initHeadless() Self {
+    return .{
+        .texture = .{},
+        .cols = 18,
+        .rows = 4,
+    };
+}
+
 pub fn deinit(self: *const Self) void {
     rl.UnloadTexture(self.texture);
 }

@@ -106,8 +106,15 @@ pub const CellIterator = struct {
 
 alloc: std.mem.Allocator,
 
+headless: bool,
 road_texture: [3]rl.Texture2D,
 tileset: Tileset,
+
+/// Pre-rendered copy of the static map (tiles, roads, sprites). Rendering the
+/// world once removes the per-frame seams caused by drawing hundreds of
+/// neighbouring quads at sub-pixel camera positions.
+static_texture: rl.RenderTexture2D,
+static_dirty: bool,
 
 tiles: TileMap,
 nodes: std.array_list.Managed(Node),
@@ -143,10 +150,37 @@ pub fn init(alloc: std.mem.Allocator) !Self {
 
     const loaded = try loadFromFile(alloc);
 
+    const static_texture = rl.LoadRenderTexture(c.WORLD_WIDTH, c.WORLD_HEIGHT);
+    rl.SetTextureFilter(static_texture.texture, rl.TEXTURE_FILTER_POINT);
+
     return .{
         .alloc = alloc,
+        .headless = false,
         .tileset = tileset,
         .road_texture = road_texture,
+        .static_texture = static_texture,
+        .static_dirty = true,
+        .tiles = loaded.tiles,
+        .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
+        .edges = std.array_list.Managed(Edge).fromOwnedSlice(alloc, loaded.edges),
+        .sprites = std.array_list.Managed(Sprite).fromOwnedSlice(alloc, loaded.sprites),
+        .start_nodes = loaded.start_nodes,
+        .end_nodes = loaded.end_nodes,
+    };
+}
+
+/// Load the map data without touching the GPU. Used by headless simulation and
+/// tests so the game logic can run in a plain terminal.
+pub fn initHeadless(alloc: std.mem.Allocator) !Self {
+    const loaded = try loadFromFile(alloc);
+
+    return .{
+        .alloc = alloc,
+        .headless = true,
+        .tileset = Tileset.initHeadless(),
+        .road_texture = .{ .{}, .{}, .{} },
+        .static_texture = .{ .id = 0, .texture = .{}, .depth = .{} },
+        .static_dirty = false,
         .tiles = loaded.tiles,
         .nodes = std.array_list.Managed(Node).fromOwnedSlice(alloc, loaded.nodes),
         .edges = std.array_list.Managed(Edge).fromOwnedSlice(alloc, loaded.edges),
@@ -157,8 +191,11 @@ pub fn init(alloc: std.mem.Allocator) !Self {
 }
 
 pub fn deinit(self: *Self) void {
-    for (self.road_texture) |road| rl.UnloadTexture(road);
-    rl.UnloadTexture(self.tileset.texture);
+    if (!self.headless) {
+        if (self.static_texture.id != 0) rl.UnloadRenderTexture(self.static_texture);
+        for (self.road_texture) |road| rl.UnloadTexture(road);
+        self.tileset.deinit();
+    }
 
     self.nodes.deinit();
     self.edges.deinit();
@@ -167,11 +204,54 @@ pub fn deinit(self: *Self) void {
     self.end_nodes.deinit(self.alloc);
 }
 
+/// Mark the cached static map as stale. Cheap: the next `prepareStatic` call
+/// re-renders it. Safe to call every editor frame.
+pub fn invalidateStatic(self: *Self) void {
+    self.static_dirty = true;
+}
+
+/// Render tiles, roads and sprites into the cached render texture when it is
+/// dirty. Must be called outside `BeginMode2D`; otherwise the camera transform
+/// would be baked into the cache.
+pub fn prepareStatic(self: *Self) void {
+    if (self.headless or !self.static_dirty or self.static_texture.id == 0) return;
+
+    rl.BeginTextureMode(self.static_texture);
+    rl.ClearBackground(rl.BLACK);
+    self.drawTiles(.all);
+    self.drawRoads(.all);
+    self.drawSprites(.all);
+    rl.EndTextureMode();
+
+    self.static_dirty = false;
+}
+
+/// Draw the cached static map at world (0,0). Must be called inside
+/// `BeginMode2D` in game mode. Raylib render textures are stored bottom-up, so
+/// the source height is negated to flip them back into world orientation.
+pub fn drawStatic(self: *Self) void {
+    if (self.headless or self.static_texture.id == 0) return;
+
+    const width: f32 = @floatFromInt(self.static_texture.texture.width);
+    const height: f32 = @floatFromInt(self.static_texture.texture.height);
+
+    rl.DrawTexturePro(
+        self.static_texture.texture,
+        .{ .x = 0, .y = 0, .width = width, .height = -height },
+        .{ .x = 0, .y = 0, .width = width, .height = height },
+        .{ .x = 0, .y = 0 },
+        0,
+        rl.WHITE,
+    );
+}
+
 pub fn drawTiles(self: *Self, draw_mode: DrawMode) void {
     for (0..self.tiles.len) |tile_y| {
         for (0..self.tiles[0].len) |tile_x| {
-            const tile_id = self.tiles[tile_y][tile_x];
-            if (tile_id == 0) continue;
+            const stored_id = self.tiles[tile_y][tile_x];
+            // Tile id 0 is "empty" in the editor, but the game should never
+            // show black void around the playable streets. Fill it with grass.
+            const tile_id = if (stored_id == 0) 1 else stored_id;
             const rect = Map.TILE_DEFINITIONS[tile_id];
             rl.DrawTexturePro(
                 self.tileset.texture,

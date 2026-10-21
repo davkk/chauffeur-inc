@@ -1,41 +1,26 @@
 const std = @import("std");
-const assert = std.debug.assert;
-const math = @import("std").math;
+const math = std.math;
 const rl = @import("raylib.zig").rl;
-const vec_rotate = @import("raylib.zig").vec_rotate;
 
-pub fn get_vertices(rect: *const rl.Rectangle, angle: f32) [4]rl.Vector2 {
-    const top_left = rl.Vector2{
-        .x = rect.x,
-        .y = rect.y,
-    };
-    const top_right = rl.Vector2{
-        .x = rect.x + rect.width,
-        .y = rect.y,
-    };
-    const bottom_left = rl.Vector2{
-        .x = rect.x,
-        .y = rect.y + rect.height,
-    };
-    const bottom_right = rl.Vector2{
-        .x = rect.x + rect.width,
-        .y = rect.y + rect.height,
-    };
+/// An oriented box. `half_extents.x` is half the width along the local x
+/// (right) axis and `half_extents.y` is half the length along the local y
+/// (back/down) axis.
+pub const Box = struct {
+    center: rl.Vector2,
+    half_extents: rl.Vector2,
+    /// Rotation in radians. Local x is `(cos(angle), sin(angle))` and local y
+    /// is `(-sin(angle), cos(angle))`, matching raylib's y-down screen space.
+    angle: f32,
+};
 
-    const rect_center = rl.Vector2{
-        .x = rect.x + rect.width / 2,
-        .y = rect.y + rect.height / 2,
-    };
+pub const Manifold = struct {
+    /// Unit normal pointing from the first box toward the second.
+    normal: rl.Vector2,
+    /// Minimum translation depth along `normal`.
+    depth: f32,
+};
 
-    return [_]rl.Vector2{
-        vec_rotate(top_left, rect_center, angle),
-        vec_rotate(top_right, rect_center, angle),
-        vec_rotate(bottom_left, rect_center, angle),
-        vec_rotate(bottom_right, rect_center, angle),
-    };
-}
-
-pub fn get_rect_axes(angle: f32) [2]rl.Vector2 {
+fn axes(angle: f32) [2]rl.Vector2 {
     const cos = math.cos(angle);
     const sin = math.sin(angle);
     return [_]rl.Vector2{
@@ -44,78 +29,36 @@ pub fn get_rect_axes(angle: f32) [2]rl.Vector2 {
     };
 }
 
-fn project(rect: *const rl.Rectangle, angle: f32, axis: *const rl.Vector2) struct { f32, f32 } {
-    var min = math.inf(f32);
-    var max = -math.inf(f32);
-
-    const vertices = get_vertices(rect, angle);
-
-    for (vertices) |vertex| {
-        const dot = rl.Vector2DotProduct(vertex, axis.*);
-        if (dot < min) {
-            min = dot;
-        }
-        if (dot > max) {
-            max = dot;
-        }
-    }
-
-    return .{ min, max };
+fn projectedRadius(box: Box, axis: rl.Vector2) f32 {
+    const box_axes = axes(box.angle);
+    return @abs(rl.Vector2DotProduct(box_axes[0], axis)) * box.half_extents.x +
+        @abs(rl.Vector2DotProduct(box_axes[1], axis)) * box.half_extents.y;
 }
 
-const CollisionResult = struct { normal: rl.Vector2, depth: f32 };
+/// Separating axis test for two oriented boxes. Returns the minimum
+/// translation vector needed to separate them, or null when they do not touch.
+pub fn collide(a: Box, b: Box) ?Manifold {
+    const delta = rl.Vector2Subtract(b.center, a.center);
 
-pub fn collide(
-    rect1: *const rl.Rectangle,
-    angle1: f32,
-    rect2: *const rl.Rectangle,
-    angle2: f32,
-) ?CollisionResult {
-    var depth: f32 = math.inf(f32);
-    var normal: rl.Vector2 = undefined;
+    var depth = math.inf(f32);
+    var normal = rl.Vector2Zero();
 
-    const axes1 = get_rect_axes(angle1);
-    for (axes1) |axis| {
-        const min1, const max1 = project(rect1, angle1, &axis);
-        const min2, const max2 = project(rect2, angle2, &axis);
+    const a_axes = axes(a.angle);
+    const b_axes = axes(b.angle);
+    const candidates = [4]rl.Vector2{ a_axes[0], a_axes[1], b_axes[0], b_axes[1] };
 
-        if (max1 < min2 or max2 < min1) {
-            return null;
-        } else {
-            const overlap1 = max1 - min2;
-            const overlap2 = max2 - min1;
-            const current_overlap = @min(overlap1, overlap2);
-            if (current_overlap < depth) {
-                depth = current_overlap;
-                normal = axis;
-            }
+    for (candidates) |axis| {
+        const overlap = projectedRadius(a, axis) + projectedRadius(b, axis) -
+            @abs(rl.Vector2DotProduct(delta, axis));
+        if (overlap <= 0) return null;
+
+        if (overlap < depth) {
+            depth = overlap;
+            normal = if (rl.Vector2DotProduct(delta, axis) < 0)
+                rl.Vector2Negate(axis)
+            else
+                axis;
         }
-    }
-
-    const axes2 = get_rect_axes(angle2);
-    for (axes2) |axis| {
-        const min1, const max1 = project(rect1, angle1, &axis);
-        const min2, const max2 = project(rect2, angle2, &axis);
-
-        if (max1 < min2 or max2 < min1) {
-            return null;
-        } else {
-            const overlap1 = max1 - min2;
-            const overlap2 = max2 - min1;
-            const current_overlap = @min(overlap1, overlap2);
-            if (current_overlap < depth) {
-                depth = current_overlap;
-                normal = axis;
-            }
-        }
-    }
-
-    const center1 = rl.Vector2{ .x = rect1.x + rect1.width / 2, .y = rect1.y + rect1.height / 2 };
-    const center2 = rl.Vector2{ .x = rect2.x + rect2.width / 2, .y = rect2.y + rect2.height / 2 };
-    const dir = rl.Vector2Subtract(center2, center1);
-
-    if (rl.Vector2DotProduct(dir, normal) < 0) {
-        normal = rl.Vector2Scale(normal, -1);
     }
 
     return .{ .normal = normal, .depth = depth };

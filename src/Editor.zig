@@ -162,6 +162,11 @@ pub fn update(self: *Self, camera: *rl.Camera2D, map: *Map) !void {
     }
 
     try self.handleState(map, camera);
+
+    // Editor drawing stays dynamic so inactive groups and live edits look
+    // right, but the cached game-mode map has to be rebuilt on the next frame
+    // that game mode is entered.
+    map.invalidateStatic();
 }
 
 pub fn draw(self: *Self, camera: *rl.Camera2D, map: *Map, is_debug: bool) !void {

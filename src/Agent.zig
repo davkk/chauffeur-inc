@@ -21,15 +21,44 @@ start_node: usize,
 end_node: usize,
 
 yield_timer: f32,
+yield_target: ?usize,
+
+/// Number of completed deliveries. Telemetry uses this to prove that traffic
+/// keeps flowing instead of deadlocking.
+resets: u32,
+
+/// Set when the agent has arrived at its destination and is waiting for Game to
+/// release it from a portal. While set the agent is inactive.
+reset_pending: bool,
+/// How long the agent has been waiting for a portal release.
+reset_wait_timer: f32,
 
 pub fn init(map: *const Map) Self {
+    return initInternal(map, false);
+}
+
+pub fn initHeadless(map: *const Map) Self {
+    return initInternal(map, true);
+}
+
+fn initInternal(map: *const Map, headless: bool) Self {
     const start_idx, const end_idx = pickRandomStartEnd(map);
     const start_node = &map.nodes.items[start_idx];
 
     var path: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
     const path_len = buildPath(&path, map, start_idx, end_idx);
 
-    const car = Car.init(start_node);
+    // Pick the body only when a texture is actually loaded. Headless runs draw
+    // nothing, so they must not consume extra random numbers: the seeded sim
+    // and tests keep the exact traffic sequence they had before models existed.
+    const model: Car.Model = if (headless) .taxi else pickTrafficModel();
+
+    var car = if (headless) Car.initHeadless(start_node) else Car.initWithModel(start_node, model);
+    if (path_len > 0) {
+        if (path[0]) |first| {
+            if (directionBetween(start_node.pos, map.nodes.items[first].pos)) |dir| car.face(dir);
+        }
+    }
 
     return .{
         .car = car,
@@ -39,6 +68,10 @@ pub fn init(map: *const Map) Self {
         .path_len = path_len,
         .path_idx = 0,
         .yield_timer = 0,
+        .yield_target = null,
+        .resets = 0,
+        .reset_pending = false,
+        .reset_wait_timer = 0,
     };
 }
 
@@ -46,8 +79,8 @@ pub fn update(self: *Self, dt: f32, map: *const Map, agents: []const Self, self_
     const input = self.decideInput(dt, map, agents, self_idx, player);
     self.car.update(dt, map, input);
 
-    if (self.isAtEnd()) {
-        self.reset(map);
+    if (!self.reset_pending and self.isAtEnd()) {
+        self.requestReset(map);
     }
 }
 
@@ -139,9 +172,9 @@ fn decideInput(self: *Self, dt: f32, map: *const Map, agents: []const Self, self
     const dot_player = rl.Vector2DotProduct(forward, to_player);
     if (dot_player > 0 and rl.Vector2Length(to_player) <= self.car.size.y * 4) {
         const same_dir = self.car.curr_dir == player.curr_dir;
-        const opp_dir = self.car.curr_dir == oppositeDirection(player.curr_dir);
+
         should_brake = should_brake or same_dir;
-        should_dodge = should_dodge or opp_dir;
+        // Agents must stay in their own lane; never dodge into the other lane.
     }
 
     for (agents, 0..) |*other, oi| {
@@ -150,18 +183,28 @@ fn decideInput(self: *Self, dt: f32, map: *const Map, agents: []const Self, self
         const dot = rl.Vector2DotProduct(forward, to_other);
         if (dot > 0 and rl.Vector2Length(to_other) <= self.car.size.y * 4) {
             const same_dir = self.car.curr_dir == other.car.curr_dir;
-            const opp_dir = self.car.curr_dir == oppositeDirection(other.car.curr_dir);
+
             should_brake = should_brake or same_dir;
-            should_dodge = should_dodge or opp_dir;
+            // Agents must stay in their own lane; never dodge into the other lane.
             if (should_brake) break;
         }
     }
     if (should_brake) should_dodge = false;
 
-    // Intersection yield-to-right. Yield outside the box, never inside
-    // (inside cars always proceed to clear -> no deadlock cycle).
-    // Total order: closer wins -> right-hand wins -> lower id wins (player=0).
-    // YIELD_TIMEOUT force-go guarantees liveness on 4-way simultaneous arrival.
+    // Consume path entries already committed as targets by flow-through turns.
+    if (self.car.next_node) |nn| {
+        while (self.path_idx < self.path_len) {
+            const entry = self.path[self.path_idx] orelse break;
+            if (entry == nn) {
+                self.path_idx += 1;
+            } else break;
+        }
+    }
+
+    // Commit the exit direction early so the turn arc starts with the right exit.
+    const lookahead_dir: ?Direction = lookaheadExitDir(self, map);
+
+    // Yield outside the box, never inside; staggered force-go keeps liveness.
     const my_id: isize = @intCast(self_idx + 1);
     var should_yield = false;
     const yield_target = self.yieldTargetNode(map);
@@ -186,19 +229,31 @@ fn decideInput(self: *Self, dt: f32, map: *const Map, agents: []const Self, self
         }
     }
 
-    if (should_yield) {
-        self.yield_timer += dt;
-        if (self.yield_timer > c.YIELD_TIMEOUT) {
-            // Liveness backstop: force go, reset so we can yield again later.
-            should_yield = false;
-            self.yield_timer = 0;
-        }
-    } else {
+    // Reset the wait clock only when the contested intersection changes, so a
+    // momentary force-go followed by re-contention at the SAME intersection
+    // can't restart the clock and starve us under a steady stream of traffic.
+    if (self.yield_target != yield_target) {
+        self.yield_target = yield_target;
         self.yield_timer = 0;
     }
 
     if (should_yield) {
-        // Hold at stop line: brake, no dodge, suppress departure dir.
+        self.yield_timer += dt;
+        const my_wait = c.YIELD_TIMEOUT + @as(f32, @floatFromInt(my_id)) * 0.5;
+        const box_clear = !self.boxBlockedByMoving(agents, self_idx, player, yield_target.?, map);
+        // Prefer to wait for the crossing car to clear (my_wait is our staggered
+        // share), but never hold past the absolute cap: that restores the
+        // unconditional liveness backstop so no agent can be starved forever.
+        const absolute_cap = c.YIELD_TIMEOUT + c.YIELD_MAX_WAIT;
+        if (self.yield_timer > absolute_cap or (self.yield_timer > my_wait and box_clear)) {
+            should_yield = false;
+        }
+    }
+
+    if (should_yield) {
+        if (lookahead_dir) |ld| {
+            return .{ .dir = ld, .brake = true, .dodge = false };
+        }
         return KeyInput.init(null, true, false);
     }
 
@@ -214,7 +269,30 @@ fn decideInput(self: *Self, dt: f32, map: *const Map, agents: []const Self, self
         }
     }
 
+    if (lookahead_dir) |ld| {
+        return .{ .dir = ld, .brake = should_brake, .dodge = should_dodge };
+    }
+
     return KeyInput.init(null, should_brake, should_dodge);
+}
+
+fn lookaheadExitDir(self: *const Self, map: *const Map) ?Direction {
+    if (self.car.turn_t != null or self.car.flip_t != null) return null;
+    const next_idx = self.car.next_node orelse return null;
+    if (next_idx >= map.nodes.items.len) return null;
+    if (self.path_idx >= self.path_len) return null;
+    const after = self.path[self.path_idx] orelse return null;
+    const node = &map.nodes.items[next_idx];
+    for (node.edges, 0..) |edge, dir_idx| {
+        if (edge == after) {
+            const dist = rl.Vector2Distance(self.car.pos, node.pos);
+            if (dist < 2.0 * c.TURN_RADIUS + c.LANE_WIDTH) {
+                return @enumFromInt(dir_idx);
+            }
+            return null;
+        }
+    }
+    return null;
 }
 
 fn yieldTargetNode(self: *const Self, map: *const Map) ?usize {
@@ -233,6 +311,32 @@ fn yieldTargetNode(self: *const Self, map: *const Map) ?usize {
         }
     }
     return null;
+}
+
+fn boxBlockedByMoving(
+    self: *const Self,
+    agents: []const Self,
+    self_idx: usize,
+    player: *const Car,
+    target_idx: usize,
+    map: *const Map,
+) bool {
+    _ = self;
+    const target_pos = map.nodes.items[target_idx].pos;
+    if (player.next_node == target_idx or player.curr_node == target_idx) {
+        if (player.speed > 30.0 and rl.Vector2Distance(player.pos, target_pos) < c.NODE_CLEAR_DIST) {
+            return true;
+        }
+    }
+    for (agents, 0..) |*other, oi| {
+        if (oi == self_idx) continue;
+        if (other.car.next_node == target_idx or other.car.curr_node == target_idx) {
+            if (other.car.speed > 30.0 and rl.Vector2Distance(other.car.pos, target_pos) < c.NODE_CLEAR_DIST) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 fn nodeDegree(map: *const Map, idx: usize) usize {
@@ -259,12 +363,19 @@ fn contestedBy(
     const other_dist = rl.Vector2Distance(other_car.pos, target_pos);
     if (other_dist > c.YIELD_DIST + c.NODE_CLEAR_DIST) return false;
 
-    // Someone already inside the box has the reservation.
+    // Box covers the turn-arc sweep, not just the node point.
     if (other_dist < c.NODE_CLEAR_DIST) return true;
 
+    // Fast arrivals claim the box early.
+    if (other_car.speed > 120.0) {
+        const other_fwd = c.BASE_VEC[@intFromEnum(other_car.curr_dir)];
+        const to_target = rl.Vector2Subtract(target_pos, other_car.pos);
+        if (rl.Vector2DotProduct(other_fwd, to_target) > 0) return true;
+    }
+
     const diff = self_dist - other_dist;
-    if (diff > c.YIELD_TIE_EPS) return true; // other clearly closer
-    if (diff < -c.YIELD_TIE_EPS) return false; // self clearly closer
+    if (diff > c.YIELD_TIE_EPS) return true;
+    if (diff < -c.YIELD_TIE_EPS) return false;
     // Tie: right-hand rule. cross > 0 means other is on my right (y-down coords).
     const to_other = rl.Vector2Subtract(other_car.pos, self.car.pos);
     if (rl.Vector2Length(to_other) < 1.0) return other_id < my_id;
@@ -283,12 +394,43 @@ pub fn isAtEnd(self: *const Self) bool {
     return self.path_idx >= self.path_len and self.car.curr_node == self.end_node and self.car.next_node == null;
 }
 
+const traffic_models = [_]Car.Model{
+    .red_sedan,
+    .blue_sedan,
+    .green_hatchback,
+    .white_van,
+    .purple_coupe,
+};
+
+fn pickTrafficModel() Car.Model {
+    return traffic_models[rand().intRangeLessThan(usize, 0, traffic_models.len)];
+}
+
 fn pickRandomStartEnd(map: *const Map) struct { usize, usize } {
     const a = rand().intRangeLessThan(usize, 0, map.start_nodes.count());
     const start_idx = map.start_nodes.keys()[a];
     const b = rand().intRangeLessThan(usize, 0, map.end_nodes.count());
     const end_idx = map.end_nodes.keys()[b];
     return .{ start_idx, end_idx };
+}
+
+pub fn requestReset(self: *Self, map: *const Map) void {
+    const start_idx, const end_idx = pickRandomStartEnd(map);
+
+    var path: [c.MAX_NODES]?usize = .{null} ** c.MAX_NODES;
+    const path_len = buildPath(&path, map, start_idx, end_idx);
+
+    self.start_node = start_idx;
+    self.end_node = end_idx;
+    self.path = path;
+    self.path_len = path_len;
+    self.path_idx = 0;
+
+    self.yield_timer = 0;
+    self.yield_target = null;
+    self.reset_pending = true;
+    self.reset_wait_timer = 0;
+    self.resets += 1;
 }
 
 pub fn reset(self: *Self, map: *const Map) void {
@@ -312,8 +454,33 @@ pub fn reset(self: *Self, map: *const Map) void {
     self.car.vel = rl.Vector2Zero();
     self.car.next_dir = null;
     self.car.next_dir_timer = 0;
-    self.car.lane_offset = 0;
-    self.car.target_lane_offset = 0;
+    self.car.lane_offset = c.LANE_WIDTH;
+    self.car.target_lane_offset = c.LANE_WIDTH;
+    self.car.lane_index = 1;
     self.car.dodge_timer = 0;
+    self.car.push_offset = rl.Vector2Zero();
+    self.car.stun_timer = 0;
+    self.car.turn_t = null;
+    self.car.flip_t = null;
+    self.car.prev_dir = null;
     self.yield_timer = 0;
+    self.yield_target = null;
+    self.resets += 1;
+
+    if (path_len > 0) {
+        if (path[0]) |first| {
+            if (directionBetween(start_node.pos, map.nodes.items[first].pos)) |dir| self.car.face(dir);
+        }
+    }
+
+    self.reset_pending = false;
+    self.reset_wait_timer = 0;
+}
+
+fn directionBetween(from: rl.Vector2, to: rl.Vector2) ?Direction {
+    if (to.y < from.y) return .up;
+    if (to.x > from.x) return .right;
+    if (to.y > from.y) return .down;
+    if (to.x < from.x) return .left;
+    return null;
 }
