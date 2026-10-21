@@ -129,7 +129,7 @@ fn initInternal(map: *const Map, headless: bool) Self {
         .achievement_popup = null,
         .achievement_timer = 0,
         .respawn_timer = 0,
-        .hint_timer = c.HINT_DURATION,
+        .hint_timer = 0,
         .crash_flash = 0,
         .pickup_flash = 0,
         .crash_cooldown = 0,
